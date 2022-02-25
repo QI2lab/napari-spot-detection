@@ -1,0 +1,11 @@
+site_name: napari-spot-detection
+site_description: Interactive parameters selection and visualization of intermediate results for spot detection.
+site_author: Alexis Coullomb
+
+theme: readthedocs
+
+
+repo_url: https://github.com/AlexCoul/napari-spot-detection
+
+pages:
+- Home: index.md
