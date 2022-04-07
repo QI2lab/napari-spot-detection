@@ -7,8 +7,14 @@ see: https://napari.org/plugins/stable/guides.html#widgets
 Replace code below according to your needs.
 """
 from PyQt5.QtCore import Qt
-from qtpy.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QPushButton, QSlider, QLabel
+from qtpy.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QPushButton, QSlider, QLabel, QLineEdit
 # from magicgui import magic_factory, magicgui
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+import napari
+import scipy.signal
+import scipy.ndimage as ndi
 from scipy.ndimage import gaussian_filter
 
 import localize_psf.rois as roi_fns
@@ -57,6 +63,13 @@ class FullSlider(QWidget):
         self.value = self.sld.value() * self.step
         self.readout.setText("{:.2f}".format(self.value))
 
+    def set_value(self, value):
+        # first set the slider at the correct position
+        self.sld.setValue(int(value / self.step))
+        # then convert the slider position to have the value
+        # we don't directly convert in order to account for rounding errors in the silder
+        self._convert_value()
+
 
 class KernelQWidget(QWidget):
     # your QWidget.__init__ can optionally request the napari viewer instance
@@ -66,6 +79,20 @@ class KernelQWidget(QWidget):
     def __init__(self, napari_viewer):
         super().__init__()
         self.viewer = napari_viewer
+
+        # expected spot size
+        self.lab_spot_size_xy = QLabel('Expected spot size xy (px)')
+        self.txt_spot_size_xy = QLineEdit()
+        self.txt_spot_size_xy.setText('5')
+        self.lab_spot_size_z = QLabel('Expected spot size z (px)')
+        self.txt_spot_size_z = QLineEdit()
+        self.txt_spot_size_z.setText('5')
+        self.lab_sigma_ratio = QLabel('Expected spot size z (px)')
+        self.txt_sigma_ratio = QLineEdit()
+        self.txt_sigma_ratio.setText('1.6')
+        self.but_auto_sigmas = QPushButton()
+        self.but_auto_sigmas.setText('Auto sigmas')
+        self.but_auto_sigmas.clicked.connect(self._make_sigmas)
 
         # DoG blob detection widgets
         self.sld_sigma_xy_small = FullSlider(range=(0.1, 20), step=0.1, label="sigma xy small")
@@ -77,15 +104,18 @@ class KernelQWidget(QWidget):
         self.sld_sigma_z_large = FullSlider(range=(0.1, 20), step=0.1, label="sigma z large")
         self.sld_sigma_z_large.valueChanged.connect(self._on_slide)
 
-        self.sld_dog_thresh = FullSlider(range=(0.1, 20), step=0.1, label="DoG threshold")
-        self.sld_dog_thresh.valueChanged.connect(self._on_slide)
+        self.sld_blob_thresh = FullSlider(range=(0.1, 20), step=0.1, label="Blob threshold")
+        self.sld_blob_thresh.valueChanged.connect(self._on_slide)
 
         self.but_dog = QPushButton()
         self.but_dog.setText('Apply DoG')
         self.but_dog.clicked.connect(self._compute_dog)
 
+        self.but_find_peaks = QPushButton()
+        self.but_find_peaks.setText('Find peaks')
+        self.but_find_peaks.clicked.connect(self._find_peaks)
+
         # gaussian fitting widgets
-        self.sld_gauss = FullSlider(label="gauss fit")
         self.but_fit = QPushButton()
         self.but_fit.setText('Fit spots')
         # self.but_fit.clicked.connect(self._fit_spots)
@@ -98,14 +128,31 @@ class KernelQWidget(QWidget):
 
         # general layout of the widget
         outerLayout = QVBoxLayout()
-        # layout for DoG blob detection
+        # layout for spot size parametrization
+        spotsizeLayout = QVBoxLayout()
+        spotsizeLayout_xy = QHBoxLayout()
+        spotsizeLayout_xy.addWidget(self.lab_spot_size_xy)
+        spotsizeLayout_xy.addWidget(self.txt_spot_size_xy)
+        spotsizeLayout_z = QHBoxLayout()
+        spotsizeLayout_z.addWidget(self.lab_spot_size_z)
+        spotsizeLayout_z.addWidget(self.txt_spot_size_z)
+        spotsizeLayout_sigmas = QHBoxLayout()
+        spotsizeLayout_sigmas.addWidget(self.lab_sigma_ratio)
+        spotsizeLayout_sigmas.addWidget(self.txt_sigma_ratio)
+        spotsizeLayout_sigmas.addWidget(self.but_auto_sigmas)
+        spotsizeLayout.addLayout(spotsizeLayout_xy)
+        spotsizeLayout.addLayout(spotsizeLayout_z)
+        spotsizeLayout.addLayout(spotsizeLayout_sigmas)
+
+        # layout for DoG filtering
         dogLayout = QVBoxLayout()
         dogLayout.addWidget(self.sld_sigma_xy_small)
         dogLayout.addWidget(self.sld_sigma_xy_large)
         dogLayout.addWidget(self.sld_sigma_z_small)
         dogLayout.addWidget(self.sld_sigma_z_large)
-        dogLayout.addWidget(self.sld_dog_thresh)
         dogLayout.addWidget(self.but_dog)
+        dogLayout.addWidget(self.sld_blob_thresh)
+        dogLayout.addWidget(self.but_find_peaks)
         # layout for fitting gaussian spots
         fitLayout = QVBoxLayout()
         fitLayout.addWidget(self.but_fit)
@@ -113,6 +160,7 @@ class KernelQWidget(QWidget):
         filterLayout = QHBoxLayout()
         filterLayout.addWidget(self.but_filter)
 
+        outerLayout.addLayout(spotsizeLayout)
         outerLayout.addLayout(dogLayout)
         outerLayout.addLayout(fitLayout)
         outerLayout.addLayout(filterLayout)
@@ -120,10 +168,36 @@ class KernelQWidget(QWidget):
         self.setLayout(outerLayout)
 
     def _on_slide(self):
-        print("sigma is {:.2f}".format(self.sld_sigma_xy_small.value))
+        # print("sigma is {:.2f}".format(self.sld_sigma_xy_small.value))
+        pass
+
+    def _make_sigmas(self):
+        """
+        Compute min and max of sigmas x, y and z with traditionnal settings.
+        """
+
+        sx = float(self.txt_spot_size_xy.text())
+        sz = float(self.txt_spot_size_z.text())
+        # FWHM = 2.355 x sigma
+        sigma_xy = sx / 2.355
+        sigma_z = sz / 2.355
+        # to reproduce LoG with Dog we need sigma_big = 1.6 * sigma_small
+        sigma_ratio = float(self.txt_sigma_ratio.text())
+        # sigma_ratio = 2
+        sigma_xy_small = sigma_xy / sigma_ratio**(1/2)
+        sigma_xy_large = sigma_xy * sigma_ratio**(1/2)
+        sigma_z_small = sigma_z / sigma_ratio**(1/2)
+        sigma_z_large = sigma_z * sigma_ratio**(1/2)
+        self.sld_sigma_xy_small.set_value(sigma_xy_small)
+        self.sld_sigma_xy_large.set_value(sigma_xy_large)
+        self.sld_sigma_z_small.set_value(sigma_z_small)
+        self.sld_sigma_z_large.set_value(sigma_z_large)
+
 
     def _compute_dog(self):
-        
+        """
+        Apply a Differential of Gaussian filter on the first image available in Napari.
+        """
         if len(self.viewer.layers) == 0:
             print("Open an image first")
         else:
@@ -143,6 +217,33 @@ class KernelQWidget(QWidget):
                 self.viewer.add_image(img_filtered, name='filtered')
             else:
                 self.viewer.layers['filtered'].data = img_filtered
+    
+    def _find_peaks(self):
+        """
+        Threshold the image resulting from the DoG filter and detect peaks.
+        """
+        if 'filtered' not in self.viewer.layers:
+            print("Run a DoG filter on an image first")
+        else:
+            dog_thresh = self.sld_blob_thresh.value
+            img_filtered = self.viewer.layers['filtered'].data
+            img_filtered[img_filtered < dog_thresh] = 0
+
+            sx = sy = float(self.txt_spot_size_xy.text())
+            sz = float(self.txt_spot_size_z.text())
+            min_separations = np.array([sz, sy, sx]).astype(int)
+
+            footprint = localize.get_max_filter_footprint(min_separations=min_separations, drs=(1,1,1))
+            # array of size nz, ny, nx of True
+
+            maxis = ndi.maximum_filter(img_filtered, footprint=np.ones(min_separations))
+            self.centers_guess_inds, amps = localize.find_peak_candidates(img_filtered, footprint, threshold=dog_thresh)
+            if 'local maxis' not in self.viewer.layers:
+                self.viewer.add_points(self.centers_guess_inds, name='local maxis', blending='additive', size=3, face_color='r')
+            else:
+                self.viewer.layers['local maxis'].data = self.centers_guess_inds
+
+
 
 # class ExampleQWidget(QWidget):
 #     # your QWidget.__init__ can optionally request the napari viewer instance
