@@ -22,6 +22,7 @@ from localize_psf import fit
 import localize_psf.fit_psf as psf
 from localize_psf import localize
 
+
 class FullSlider(QWidget):
     """
     Custom Slider widget with its label and value displayed.
@@ -116,14 +117,31 @@ class KernelQWidget(QWidget):
         self.but_find_peaks.clicked.connect(self._find_peaks)
 
         # gaussian fitting widgets
+        self.lab_roi_sizes = QLabel('Fit ROI sizes (xy, z)')
+        self.txt_roi_size_xy = QLineEdit()
+        self.txt_roi_size_xy.setText('10')
+        self.txt_roi_size_z = QLineEdit()
+        self.txt_roi_size_z.setText('10')
+        
+        self.lab_min_roi_sizes = QLabel('Minimum ROI sizes (xy, z)')
+        self.txt_min_roi_size_xy = QLineEdit()
+        self.txt_min_roi_size_xy.setText('5')
+        self.txt_min_roi_size_z = QLineEdit()
+        self.txt_min_roi_size_z.setText('5')
+
+        self.but_auto_roi = QPushButton()
+        self.but_auto_roi.setText('Auto ROI sizes')
+        self.but_auto_roi.clicked.connect(self._make_roi_sizes)
+
         self.but_fit = QPushButton()
         self.but_fit.setText('Fit spots')
-        # self.but_fit.clicked.connect(self._fit_spots)
+        self.but_fit.clicked.connect(self._fit_spots)
 
         # spot filtering widgets
         self.but_filter = QPushButton()
         self.but_filter.setText('Filter spots')
         # self.but_filter.clicked.connect(self._filter_spots)
+
 
 
         # general layout of the widget
@@ -155,7 +173,19 @@ class KernelQWidget(QWidget):
         dogLayout.addWidget(self.but_find_peaks)
         # layout for fitting gaussian spots
         fitLayout = QVBoxLayout()
+        roisizesLayout = QHBoxLayout()
+        roisizesLayout.addWidget(self.lab_roi_sizes)
+        roisizesLayout.addWidget(self.txt_roi_size_xy)
+        roisizesLayout.addWidget(self.txt_roi_size_z)
+        minroisizesLayout = QHBoxLayout()
+        minroisizesLayout.addWidget(self.lab_min_roi_sizes)
+        minroisizesLayout.addWidget(self.txt_min_roi_size_xy)
+        minroisizesLayout.addWidget(self.txt_min_roi_size_z)
+        fitLayout.addLayout(roisizesLayout)
+        fitLayout.addLayout(minroisizesLayout)
+        fitLayout.addWidget(self.but_auto_roi)
         fitLayout.addWidget(self.but_fit)
+
         # layout for filtering gaussian spots
         filterLayout = QHBoxLayout()
         filterLayout.addWidget(self.but_filter)
@@ -192,6 +222,8 @@ class KernelQWidget(QWidget):
         self.sld_sigma_xy_large.set_value(sigma_xy_large)
         self.sld_sigma_z_small.set_value(sigma_z_small)
         self.sld_sigma_z_large.set_value(sigma_z_large)
+        self.sigma_xy = sigma_xy
+        self.sigma_z = sigma_z
 
 
     def _compute_dog(self):
@@ -237,13 +269,173 @@ class KernelQWidget(QWidget):
             # array of size nz, ny, nx of True
 
             maxis = ndi.maximum_filter(img_filtered, footprint=np.ones(min_separations))
-            self.centers_guess_inds, amps = localize.find_peak_candidates(img_filtered, footprint, threshold=dog_thresh)
+            self.centers_guess_inds, self.amps = localize.find_peak_candidates(img_filtered, footprint, threshold=dog_thresh)
             if 'local maxis' not in self.viewer.layers:
                 self.viewer.add_points(self.centers_guess_inds, name='local maxis', blending='additive', size=3, face_color='r')
             else:
                 self.viewer.layers['local maxis'].data = self.centers_guess_inds
 
+    def _make_roi_sizes(self):
+        """
+        Compute the x/y and z sizes of ROIs to fit gaussians to spots.
+        """
 
+        sx = sy = float(self.txt_spot_size_xy.text())
+        sz = float(self.txt_spot_size_z.text())
+        fit_roi_sizes = (1.5 * np.array([sz, sy, sx])).astype(int)
+        min_fit_roi_sizes = fit_roi_sizes * 0.5
+
+        self.txt_roi_size_xy.setText(str(fit_roi_sizes[-1]))
+        self.txt_roi_size_z.setText(str(fit_roi_sizes[0]))
+        self.txt_min_roi_size_xy.setText(str(min_fit_roi_sizes[-1]))
+        self.txt_min_roi_size_z.setText(str(min_fit_roi_sizes[0]))
+    
+    def get_roi_coordinates(self, centers, sizes, max_coords_val, min_sizes, return_sizes=True):
+        """
+        Make pairs of (z, y, x) coordinates defining an ROI.
+        
+        Parameters
+        ----------
+        centers : ndarray, dtype int
+            Centers of future ROIs, a Nx3 array.
+        sizes : array or list
+            Size of ROIs in each dimensions.
+        max_coords_val : array or list
+            Maximum value of coordinates in each dimension,
+            typically the original image shape - 1.
+        min_sizes : array or list
+            Minimum size of ROIs in each dimension.
+        
+        Returns
+        -------
+        roi_coords : ndarray
+            Pairs of point coordinates, a 2xNx3 array.
+        roi_coords : ndarray
+            Shape of each ROI, Nx3 array.
+        """
+        
+        # make raw coordinates
+        min_coords = centers - sizes / 2
+        max_coords = centers + sizes / 2
+        coords = np.stack([min_coords, max_coords]).astype(int)
+        # clean min and max values of coordinates
+        coords[coords < 0] = 0
+        for i in range(3):
+            coords[1, coords[1, :, i] > max_coords_val[i], i] = max_coords_val[i]
+        # delete small ROIs
+        roi_sizes = coords[1, :, :] - coords[0, :, :]
+        select = ~np.any([roi_sizes[:, i] <= min_sizes[i] for i in range(3)], axis=0)
+        coords = coords[:, select, :]
+        # swap axes for latter convenience
+        roi_coords = np.swapaxes(coords, 0, 1)
+        
+        if return_sizes:
+            roi_sizes = roi_sizes[select, :]
+            return roi_coords, roi_sizes
+        else:
+            return roi_coords
+
+    
+    def extract_ROI(self, img, coords):
+        """
+        Extract a portion of an image given by the coordinates of 2 points.
+        
+        Parameters
+        ----------
+        img : ndarray, dimension 3
+            The i;age from which the ROI is extracted.
+        coords : ndarry, shape (2, 3)
+            The 2 coordinates of the 3 dimensional points at the corner of the ROI.
+        
+        Returns
+        -------
+        roi : ndarray
+            A region of interest of the original image.
+        """
+        
+        z0, y0, x0 = coords[0]
+        z1, y1, x1 = coords[1]
+        roi = img[z0:z1, y0:y1, x0:x1]
+        return roi
+
+    
+    def _fit_spots(self):
+        """
+        Perform a gaussian fitting on each ROI.
+        """
+
+        roi_size_xy = int(float(self.txt_roi_size_xy.text()))
+        roi_size_z = int(float(self.txt_roi_size_z.text()))
+        min_roi_size_xy = int(float(self.txt_min_roi_size_xy.text()))
+        min_roi_size_z = int(float(self.txt_min_roi_size_z.text()))
+        img = self.viewer.layers[0].data
+
+        fit_roi_sizes = np.array([roi_size_z, roi_size_xy, roi_size_xy])
+        min_fit_roi_sizes = np.array([min_roi_size_z, min_roi_size_xy, min_roi_size_xy])
+
+        roi_coords, roi_sizes = self.get_roi_coordinates(
+            centers = self.centers_guess_inds, 
+            sizes = fit_roi_sizes, 
+            max_coords_val = np.array(img.shape) - 1, 
+            min_sizes = min_fit_roi_sizes,
+        )
+        nb_rois = roi_coords.shape[0]
+
+        centers_guess = (roi_sizes / 2)
+
+
+        # actually fitting
+        all_res = []
+        chi_squareds = []
+        # all_init_params = []
+        for i in range(nb_rois):
+            # extract ROI
+            roi = self.extract_ROI(img, roi_coords[i])
+            # fit gaussian in ROI
+            init_params = np.array([
+                self.amps[i], 
+                centers_guess[i, 2],
+                centers_guess[i, 1],
+                centers_guess[i, 0],
+                self.sigma_xy, 
+                self.sigma_z, 
+                roi.min(),
+            ])
+            # all_init_params.append(init_params)
+            fit_results = localize.fit_gauss_roi(
+                roi, 
+                (localize.get_coords(roi_sizes[i], drs=[1, 1, 1])), 
+                init_params,
+                fixed_params=np.full_like(init_params, False),
+            )
+            chi_squareds.append(fit_results['chi_squared'])
+            all_res.append(fit_results['fit_params'])
+
+        # process all the results
+        all_res = np.array(all_res)
+        amplitudes = all_res[:, 0]
+        centers = all_res[:, 3:0:-1]
+        sigmas_xy = all_res[:, 4]
+        sigmas_z = all_res[:, 5]
+        offsets = all_res[:, 6]
+        chi_squareds = np.array(chi_squareds)
+        # distances from initial guess
+        centers_dist = np.sqrt(np.sum((centers - centers_guess)**2, axis=1))
+        # add origin coordinates of each ROI
+        centers = centers + roi_coords[:, 0, :]
+        # composed variables for filtering
+        diff_amplitudes = amplitudes - offsets
+        sigma_z_xy_ratios = sigmas_xy / sigmas_z
+
+        self.centers = centers
+    
+        if 'fitted spots' not in self.viewer.layers:
+            self.viewer.add_points(self.centers, name='fitted spots', blending='additive', size=3, face_color='g')
+        else:
+            self.viewer.layers['fitted spots'].data = self.centers
+
+if __name__ == "__main__":
+    viewer = napari.Viewer()
 
 # class ExampleQWidget(QWidget):
 #     # your QWidget.__init__ can optionally request the napari viewer instance
