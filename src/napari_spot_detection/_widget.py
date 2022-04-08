@@ -249,6 +249,9 @@ class KernelQWidget(QWidget):
                 self.viewer.add_image(img_filtered, name='filtered')
             else:
                 self.viewer.layers['filtered'].data = img_filtered
+            # basic auto thresholding
+            blob_thresh = np.percentile(img_filtered.ravel(), 95)
+            self.sld_blob_thresh.set_value(blob_thresh)
     
     def _find_peaks(self):
         """
@@ -257,9 +260,9 @@ class KernelQWidget(QWidget):
         if 'filtered' not in self.viewer.layers:
             print("Run a DoG filter on an image first")
         else:
-            dog_thresh = self.sld_blob_thresh.value
+            blob_thresh = self.sld_blob_thresh.value
             img_filtered = self.viewer.layers['filtered'].data
-            img_filtered[img_filtered < dog_thresh] = 0
+            img_filtered[img_filtered < blob_thresh] = 0
 
             sx = sy = float(self.txt_spot_size_xy.text())
             sz = float(self.txt_spot_size_z.text())
@@ -269,7 +272,7 @@ class KernelQWidget(QWidget):
             # array of size nz, ny, nx of True
 
             maxis = ndi.maximum_filter(img_filtered, footprint=np.ones(min_separations))
-            self.centers_guess_inds, self.amps = localize.find_peak_candidates(img_filtered, footprint, threshold=dog_thresh)
+            self.centers_guess_inds, self.amps = localize.find_peak_candidates(img_filtered, footprint, threshold=blob_thresh)
             if 'local maxis' not in self.viewer.layers:
                 self.viewer.add_points(self.centers_guess_inds, name='local maxis', blending='additive', size=3, face_color='r')
             else:
