@@ -7,7 +7,8 @@ see: https://napari.org/plugins/stable/guides.html#widgets
 Replace code below according to your needs.
 """
 from PyQt5.QtCore import Qt
-from qtpy.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QPushButton, QSlider, QLabel, QLineEdit
+from qtpy.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QGridLayout, QPushButton, QSlider, QLabel, QLineEdit, QCheckBox
+from superqt import QLabeledDoubleRangeSlider, QLabeledDoubleSlider
 # from magicgui import magic_factory, magicgui
 import numpy as np
 import matplotlib.pyplot as plt
@@ -138,9 +139,47 @@ class KernelQWidget(QWidget):
         self.but_fit.clicked.connect(self._fit_spots)
 
         # spot filtering widgets
+        self.lab_filter_amplitude_range = QLabel('Range amplitude')
+        self.sld_filter_amplitude_range = QLabeledDoubleRangeSlider(Qt.Orientation.Horizontal)
+        self.sld_filter_amplitude_range.setRange(1, 4)
+        self.sld_filter_amplitude_range.setValue([2, 3])
+        self.sld_filter_amplitude_range.setBarIsRigid(False)
+        self.chk_filter_amplitude_min = QCheckBox()
+        self.chk_filter_amplitude_max = QCheckBox()
+        self.lab_filter_sigma_xy_range = QLabel('Range sigma x/y')
+        self.sld_filter_sigma_xy_range = QLabeledDoubleRangeSlider(Qt.Orientation.Horizontal)
+        self.sld_filter_sigma_xy_range.setRange(1, 4)
+        self.sld_filter_sigma_xy_range.setValue([2, 3])
+        self.sld_filter_sigma_xy_range.setBarIsRigid(False)
+        self.chk_filter_sigma_xy_min = QCheckBox()
+        self.chk_filter_sigma_xy_max = QCheckBox()
+        self.lab_filter_sigma_z_range = QLabel('Range sigma z')
+        self.sld_filter_sigma_z_range = QLabeledDoubleRangeSlider(Qt.Orientation.Horizontal)
+        self.sld_filter_sigma_z_range.setRange(1, 4)
+        self.sld_filter_sigma_z_range.setValue([2, 3])
+        self.sld_filter_sigma_z_range.setBarIsRigid(False)
+        self.chk_filter_sigma_z_min = QCheckBox()
+        self.chk_filter_sigma_z_max = QCheckBox()
+        self.lab_filter_sigma_ratio_range = QLabel('Range sigma ratio z/xy')
+        self.sld_filter_sigma_ratio_range = QLabeledDoubleRangeSlider(Qt.Orientation.Horizontal)
+        self.sld_filter_sigma_ratio_range.setRange(1, 4)
+        self.sld_filter_sigma_ratio_range.setValue([2, 3])
+        self.sld_filter_sigma_ratio_range.setBarIsRigid(False)
+        self.chk_filter_sigma_ratio_min = QCheckBox()
+        self.chk_filter_sigma_ratio_max = QCheckBox()
+        self.lab_filter_chi_squared = QLabel('min chi squared')
+        self.sld_filter_chi_squared = QLabeledDoubleSlider(Qt.Orientation.Horizontal)
+        self.sld_filter_chi_squared.setRange(1, 3)
+        self.sld_filter_chi_squared.setValue(2)
+        self.chk_filter_chi_squared = QCheckBox()
+        self.lab_filter_dist_center = QLabel('distance to center')
+        self.sld_filter_dist_center = QLabeledDoubleSlider(Qt.Orientation.Horizontal)
+        self.sld_filter_dist_center.setRange(1, 3)
+        self.sld_filter_dist_center.setValue(2)
+        self.chk_filter_dist_center = QCheckBox()
         self.but_filter = QPushButton()
         self.but_filter.setText('Filter spots')
-        # self.but_filter.clicked.connect(self._filter_spots)
+        self.but_filter.clicked.connect(self._filter_spots)
 
 
 
@@ -187,8 +226,44 @@ class KernelQWidget(QWidget):
         fitLayout.addWidget(self.but_fit)
 
         # layout for filtering gaussian spots
-        filterLayout = QHBoxLayout()
-        filterLayout.addWidget(self.but_filter)
+        filterLayout = QGridLayout()
+        # amplitudes
+        filterLayout.addWidget(self.lab_filter_amplitude_range, 0, 0)
+        filterLayout.addWidget(self.sld_filter_amplitude_range, 0, 1)
+        chk_layout = QHBoxLayout()
+        chk_layout.addWidget(self.chk_filter_amplitude_min)
+        chk_layout.addWidget(self.chk_filter_amplitude_max)
+        filterLayout.addLayout(chk_layout, 0, 2)
+        # sigma xy
+        filterLayout.addWidget(self.lab_filter_sigma_xy_range, 1, 0)
+        filterLayout.addWidget(self.sld_filter_sigma_xy_range, 1, 1)
+        chk_layout = QHBoxLayout()
+        chk_layout.addWidget(self.chk_filter_sigma_xy_min)
+        chk_layout.addWidget(self.chk_filter_sigma_xy_max)
+        filterLayout.addLayout(chk_layout, 1, 2)
+        # sigma z
+        filterLayout.addWidget(self.lab_filter_sigma_z_range, 2, 0)
+        filterLayout.addWidget(self.sld_filter_sigma_z_range, 2, 1)
+        chk_layout = QHBoxLayout()
+        chk_layout.addWidget(self.chk_filter_sigma_z_min)
+        chk_layout.addWidget(self.chk_filter_sigma_z_max)
+        filterLayout.addLayout(chk_layout, 2, 2)
+        # sigma ratio z/xy
+        filterLayout.addWidget(self.lab_filter_sigma_ratio_range, 3, 0)
+        filterLayout.addWidget(self.sld_filter_sigma_ratio_range, 3, 1)
+        chk_layout = QHBoxLayout()
+        chk_layout.addWidget(self.chk_filter_sigma_ratio_min)
+        chk_layout.addWidget(self.chk_filter_sigma_ratio_max)
+        filterLayout.addLayout(chk_layout, 3, 2)
+        # chi squared
+        filterLayout.addWidget(self.lab_filter_chi_squared, 4, 0)
+        filterLayout.addWidget(self.sld_filter_chi_squared, 4, 1)
+        filterLayout.addWidget(self.chk_filter_chi_squared, 4, 2)
+        # distance to center
+        filterLayout.addWidget(self.lab_filter_dist_center, 5, 0)
+        filterLayout.addWidget(self.sld_filter_dist_center, 5, 1)
+        filterLayout.addWidget(self.chk_filter_dist_center, 5, 2)
+        filterLayout.addWidget(self.but_filter, 6, 1)
 
         outerLayout.addLayout(spotsizeLayout)
         outerLayout.addLayout(dogLayout)
@@ -241,8 +316,8 @@ class KernelQWidget(QWidget):
             kernel_large = localize.get_filter_kernel(filter_sigma_large, pixel_sizes, sigma_cutoff)
 
             img = self.viewer.layers[0].data
-            img_high_pass = localize.filter_convolve(img, kernel_small, use_gpu=False)
-            img_low_pass = localize.filter_convolve(img, kernel_large, use_gpu=False)
+            img_high_pass = localize.filter_convolve(img, kernel_small, use_gpu=True)
+            img_low_pass = localize.filter_convolve(img, kernel_large, use_gpu=True)
             img_filtered = img_high_pass - img_low_pass
             # im_gauss = gaussian_filter(self.viewer.layers[0].data, sigma=self.sld_sigma_xy_small.value)
             if 'filtered' not in self.viewer.layers:
@@ -389,7 +464,7 @@ class KernelQWidget(QWidget):
 
         # actually fitting
         all_res = []
-        chi_squareds = []
+        chi_squared = []
         # all_init_params = []
         for i in range(nb_rois):
             # extract ROI
@@ -411,34 +486,86 @@ class KernelQWidget(QWidget):
                 init_params,
                 fixed_params=np.full_like(init_params, False),
             )
-            chi_squareds.append(fit_results['chi_squared'])
+            chi_squared.append(fit_results['chi_squared'])
             all_res.append(fit_results['fit_params'])
 
         # process all the results
         all_res = np.array(all_res)
-        amplitudes = all_res[:, 0]
+        self.amplitudes = all_res[:, 0]
         centers = all_res[:, 3:0:-1]
-        sigmas_xy = all_res[:, 4]
-        sigmas_z = all_res[:, 5]
-        offsets = all_res[:, 6]
-        chi_squareds = np.array(chi_squareds)
+        self.sigmas_xy = all_res[:, 4]
+        self.sigmas_z = all_res[:, 5]
+        self.offsets = all_res[:, 6]
+        self.chi_squared = np.array(chi_squared)
         # distances from initial guess
-        centers_dist = np.sqrt(np.sum((centers - centers_guess)**2, axis=1))
+        self.dist_center = np.sqrt(np.sum((centers - centers_guess)**2, axis=1))
         # add origin coordinates of each ROI
-        centers = centers + roi_coords[:, 0, :]
+        self.centers = centers + roi_coords[:, 0, :]
         # composed variables for filtering
-        diff_amplitudes = amplitudes - offsets
-        sigma_z_xy_ratios = sigmas_xy / sigmas_z
+        self.diff_amplitudes = self.amplitudes - self.offsets
+        self.sigma_ratios = self.sigmas_z / self.sigmas_xy
 
-        self.centers = centers
+        # update range of filters
+        p_mini = 2
+        p_maxi = 98
+        self.sld_filter_amplitude_range.setRange(np.percentile(self.amplitudes, p_mini), np.percentile(self.amplitudes, p_maxi))
+        self.sld_filter_sigma_xy_range.setRange(np.percentile(self.sigmas_xy, p_mini), np.percentile(self.sigmas_xy, p_maxi))
+        self.sld_filter_sigma_z_range.setRange(np.percentile(self.sigmas_z, p_mini), np.percentile(self.sigmas_z, p_maxi))
+        self.sld_filter_sigma_ratio_range.setRange(np.percentile(self.sigma_ratios, p_mini), np.percentile(self.sigma_ratios, p_maxi))
+        self.sld_filter_chi_squared.setRange(np.percentile(self.chi_squared, p_mini), np.percentile(self.chi_squared, p_maxi))
+        self.sld_filter_dist_center.setRange(np.percentile(self.dist_center, p_mini), np.percentile(self.dist_center, p_maxi))
     
         if 'fitted spots' not in self.viewer.layers:
             self.viewer.add_points(self.centers, name='fitted spots', blending='additive', size=3, face_color='g')
         else:
             self.viewer.layers['fitted spots'].data = self.centers
+    
+    def _filter_spots(self):
+        """
+        Filter out spots based on gaussian fit results.
+        """
 
+        # list of boolean filters for all spots thresholds
+        selectors = []
+        
+        if self.chk_filter_amplitude_min.isChecked():
+            selectors.append(self.amplitudes >= self.sld_filter_amplitude_range.value()[0])
+        if self.chk_filter_amplitude_max.isChecked():
+            selectors.append(self.amplitudes <= self.sld_filter_amplitude_range.value()[1])
+        if self.chk_filter_sigma_xy_min.isChecked():
+            selectors.append(self.sigmas_xy >= self.sld_filter_sigma_xy_range.value()[0])
+        if self.chk_filter_sigma_xy_max.isChecked():
+            selectors.append(self.sigmas_xy <= self.sld_filter_sigma_xy_range.value()[1])
+        if self.chk_filter_sigma_z_min.isChecked():
+            selectors.append(self.sigmas_z >= self.sld_filter_sigma_z_range.value()[0])
+        if self.chk_filter_sigma_z_max.isChecked():
+            selectors.append(self.sigmas_z <= self.sld_filter_sigma_z_range.value()[1])
+        if self.chk_filter_sigma_ratio_min.isChecked():
+            selectors.append(self.sigma_ratios >= self.sld_filter_sigma_ratio_range.value()[0])
+        if self.chk_filter_sigma_ratio_max.isChecked():
+            selectors.append(self.sigma_ratios <= self.sld_filter_sigma_ratio_range.value()[1])
+        if self.chk_filter_chi_squared.isChecked():
+            selectors.append(self.chi_squared >= self.sld_filter_chi_squared.value())
+        if self.chk_filter_dist_center.isChecked():
+            selectors.append(self.dist_center <= self.sld_filter_dist_center.value())
+
+
+        if len(selectors) == 0:
+            print("Check at list one box to activate filters")
+        else:
+            self.spot_select = np.logical_and.reduce(selectors)
+            print(self.spot_select.shape)
+            print(self.spot_select[:5])
+        
+            # self.viewer.layers['filtered spots'].data = self.centers[self.spot_select] doesn't work
+            if 'filtered spots' in self.viewer.layers:
+                del self.viewer.layers['filtered spots']
+            self.viewer.add_points(self.centers[self.spot_select], name='filtered spots', blending='additive', size=3, face_color='b')
+            
+        
 if __name__ == "__main__":
     viewer = napari.Viewer()
+    napari.run()
 
 # class ExampleQWidget(QWidget):
 #     # your QWidget.__init__ can optionally request the napari viewer instance
