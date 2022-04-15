@@ -13,6 +13,7 @@ from superqt import QLabeledDoubleRangeSlider, QLabeledDoubleSlider
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
+import json
 import napari
 import scipy.signal
 import scipy.ndimage as ndi
@@ -81,6 +82,8 @@ class KernelQWidget(QWidget):
     def __init__(self, napari_viewer):
         super().__init__()
         self.viewer = napari_viewer
+        # automatic adaptation of parameters when steps complete, False when loading parameters
+        self.auto_params = True 
 
         # expected spot size
         self.lab_spot_size_xy = QLabel('Expected spot size xy (px)')
@@ -89,7 +92,7 @@ class KernelQWidget(QWidget):
         self.lab_spot_size_z = QLabel('Expected spot size z (px)')
         self.txt_spot_size_z = QLineEdit()
         self.txt_spot_size_z.setText('5')
-        self.lab_sigma_ratio = QLabel('Expected spot size z (px)')
+        self.lab_sigma_ratio = QLabel('DoG sigma ratio big / small')
         self.txt_sigma_ratio = QLineEdit()
         self.txt_sigma_ratio.setText('1.6')
         self.but_auto_sigmas = QPushButton()
@@ -346,7 +349,8 @@ class KernelQWidget(QWidget):
                 self.viewer.layers['filtered'].data = img_filtered
             # basic auto thresholding
             blob_thresh = np.percentile(img_filtered.ravel(), 95)
-            self.sld_blob_thresh.set_value(blob_thresh)
+            if self.auto_params:
+                self.sld_blob_thresh.set_value(blob_thresh)
     
     def _find_peaks(self):
         """
@@ -372,6 +376,8 @@ class KernelQWidget(QWidget):
                 self.viewer.add_points(self.centers_guess_inds, name='local maxis', blending='additive', size=3, face_color='r')
             else:
                 self.viewer.layers['local maxis'].data = self.centers_guess_inds
+            if self.auto_params:
+                self._make_roi_sizes()
 
     def _make_roi_sizes(self):
         """
@@ -528,12 +534,13 @@ class KernelQWidget(QWidget):
         # update range of filters
         p_mini = 5
         p_maxi = 95
-        self.sld_filter_amplitude_range.setRange(np.percentile(self.amplitudes, p_mini), np.percentile(self.amplitudes, p_maxi))
-        self.sld_filter_sigma_xy_range.setRange(np.percentile(self.sigmas_xy, p_mini), np.percentile(self.sigmas_xy, p_maxi))
-        self.sld_filter_sigma_z_range.setRange(np.percentile(self.sigmas_z, p_mini), np.percentile(self.sigmas_z, p_maxi))
-        self.sld_filter_sigma_ratio_range.setRange(np.percentile(self.sigma_ratios, p_mini), np.percentile(self.sigma_ratios, p_maxi))
-        self.sld_filter_chi_squared.setRange(np.percentile(self.chi_squared, p_mini), np.percentile(self.chi_squared, p_maxi))
-        self.sld_filter_dist_center.setRange(np.percentile(self.dist_center, p_mini), np.percentile(self.dist_center, p_maxi))
+        if self.auto_params:
+            self.sld_filter_amplitude_range.setRange(np.percentile(self.amplitudes, p_mini), np.percentile(self.amplitudes, p_maxi))
+            self.sld_filter_sigma_xy_range.setRange(np.percentile(self.sigmas_xy, p_mini), np.percentile(self.sigmas_xy, p_maxi))
+            self.sld_filter_sigma_z_range.setRange(np.percentile(self.sigmas_z, p_mini), np.percentile(self.sigmas_z, p_maxi))
+            self.sld_filter_sigma_ratio_range.setRange(np.percentile(self.sigma_ratios, p_mini), np.percentile(self.sigma_ratios, p_maxi))
+            self.sld_filter_chi_squared.setRange(np.percentile(self.chi_squared, p_mini), np.percentile(self.chi_squared, p_maxi))
+            self.sld_filter_dist_center.setRange(np.percentile(self.dist_center, p_mini), np.percentile(self.dist_center, p_maxi))
     
         if 'fitted spots' not in self.viewer.layers:
             self.viewer.add_points(self.centers, name='fitted spots', blending='additive', size=3, face_color='g')
@@ -654,12 +661,85 @@ class KernelQWidget(QWidget):
             
 
     def _save_parameters(self):
-        pass
+        detection_parameters = {
+            'txt_spot_size_z': float(self.txt_spot_size_z.text()),
+            'txt_spot_size_xy': float(self.txt_spot_size_xy.text()),
+            'txt_sigma_ratio': float(self.txt_sigma_ratio.text()),
+            'sld_sigma_z_small': self.sld_sigma_z_small.value,
+            'sld_sigma_xy_small': self.sld_sigma_xy_small.value,
+            'sld_sigma_z_large': self.sld_sigma_z_large.value,
+            'sld_sigma_xy_large': self.sld_sigma_xy_large.value,
+            'sld_blob_thresh': self.sld_blob_thresh.value,
+            'txt_roi_size_z': float(self.txt_roi_size_z.text()),
+            'txt_roi_size_xy': float(self.txt_roi_size_xy.text()),
+            'txt_min_roi_size_z': float(self.txt_min_roi_size_z.text()),
+            'txt_min_roi_size_xy': float(self.txt_min_roi_size_xy.text()),
+            'chk_filter_amplitude_min': self.chk_filter_amplitude_min.isChecked(),
+            'chk_filter_amplitude_max': self.chk_filter_amplitude_max.isChecked(),
+            'sld_filter_amplitude_range': self.sld_filter_amplitude_range.value(),
+            'chk_filter_sigma_xy_min': self.chk_filter_sigma_xy_min.isChecked(),
+            'chk_filter_sigma_xy_max': self.chk_filter_sigma_xy_max.isChecked(),
+            'sld_filter_sigma_xy_range': self.sld_filter_sigma_xy_range.value(),
+            'chk_filter_sigma_z_min': self.chk_filter_sigma_z_min.isChecked(),
+            'chk_filter_sigma_z_max': self.chk_filter_sigma_z_max.isChecked(),
+            'sld_filter_sigma_z_range': self.sld_filter_sigma_z_range.value(),
+            'chk_filter_sigma_ratio_min': self.chk_filter_sigma_ratio_min.isChecked(),
+            'chk_filter_sigma_ratio_max': self.chk_filter_sigma_ratio_max.isChecked(),
+            'sld_filter_sigma_ratio_range': self.sld_filter_sigma_ratio_range.value(),
+            'chk_filter_chi_squared': self.chk_filter_chi_squared.isChecked(),
+            'sld_filter_chi_squared': self.sld_filter_chi_squared.value(),
+            'chk_filter_dist_center': self.chk_filter_dist_center.isChecked(),
+            'sld_filter_dist_center': self.sld_filter_dist_center.value(),
+        }
+
+        path_save = QFileDialog.getSaveFileName(self, 'Export detection parameters')[0]
+        if path_save != '':
+            if not path_save.endswith('.json'):
+                path_save = path_save + '.json'
+            with open(path_save, "w") as write_file:
+                json.dump(detection_parameters, write_file, indent=4)
+
 
     def _load_parameters(self):
-        pass
 
-        
+        path_load = QFileDialog.getOpenFileName(self,"Load spots data","","JSON Files (*.json);;All Files (*)")[0]
+        if path_load != '':
+            # deactivate automatic parameters update during pipeline execution
+            self.auto_params = False
+            with open(path_load, "r") as read_file:
+                detection_parameters = json.load(read_file)
+            
+            # parse all keys and modify the widgets' values
+            self.txt_spot_size_z.setText(str(detection_parameters['txt_spot_size_z']))
+            self.txt_spot_size_xy.setText(str(detection_parameters['txt_spot_size_xy']))
+            self.txt_sigma_ratio.setText(str(detection_parameters['txt_sigma_ratio']))
+            self.sld_sigma_z_small.set_value(detection_parameters['sld_sigma_z_small'])
+            self.sld_sigma_xy_small.set_value(detection_parameters['sld_sigma_xy_small'])
+            self.sld_sigma_z_large.set_value(detection_parameters['sld_sigma_z_large'])
+            self.sld_sigma_xy_large.set_value(detection_parameters['sld_sigma_xy_large'])
+            self.sld_blob_thresh.set_value(detection_parameters['sld_blob_thresh'])
+            self.txt_roi_size_z.setText(str(detection_parameters['txt_roi_size_z']))
+            self.txt_roi_size_xy.setText(str(detection_parameters['txt_roi_size_xy']))
+            self.txt_min_roi_size_z.setText(str(detection_parameters['txt_min_roi_size_z']))
+            self.txt_min_roi_size_xy.setText(str(detection_parameters['txt_min_roi_size_xy']))
+            self.chk_filter_amplitude_min.setChecked(detection_parameters['chk_filter_amplitude_min'])
+            self.chk_filter_amplitude_max.setChecked(detection_parameters['chk_filter_amplitude_max'])
+            self.sld_filter_amplitude_range.setValue(detection_parameters['sld_filter_amplitude_range'])
+            self.chk_filter_sigma_xy_min.setChecked(detection_parameters['chk_filter_sigma_xy_min'])
+            self.chk_filter_sigma_xy_max.setChecked(detection_parameters['chk_filter_sigma_xy_max'])
+            self.sld_filter_sigma_xy_range.setValue(detection_parameters['sld_filter_sigma_xy_range'])
+            self.chk_filter_sigma_z_min.setChecked(detection_parameters['chk_filter_sigma_z_min'])
+            self.chk_filter_sigma_z_max.setChecked(detection_parameters['chk_filter_sigma_z_max'])
+            self.sld_filter_sigma_z_range.setValue(detection_parameters['sld_filter_sigma_z_range'])
+            self.chk_filter_sigma_ratio_min.setChecked(detection_parameters['chk_filter_sigma_ratio_min'])
+            self.chk_filter_sigma_ratio_max.setChecked(detection_parameters['chk_filter_sigma_ratio_max'])
+            self.sld_filter_sigma_ratio_range.setValue(detection_parameters['sld_filter_sigma_ratio_range'])
+            self.chk_filter_chi_squared.setChecked(detection_parameters['chk_filter_chi_squared'])
+            self.sld_filter_chi_squared.setValue(detection_parameters['sld_filter_chi_squared'])
+            self.chk_filter_dist_center.setChecked(detection_parameters['chk_filter_dist_center'])
+            self.sld_filter_dist_center.setValue(detection_parameters['sld_filter_dist_center'])
+
+
 
 if __name__ == "__main__":
     viewer = napari.Viewer()
