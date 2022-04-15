@@ -6,8 +6,8 @@ see: https://napari.org/plugins/stable/guides.html#widgets
 
 Replace code below according to your needs.
 """
-from PyQt5.QtCore import Qt
-from qtpy.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QGridLayout, QPushButton, QSlider, QLabel, QLineEdit, QCheckBox
+from qtpy.QtCore import Qt
+from qtpy.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QGridLayout, QPushButton, QSlider, QLabel, QLineEdit, QCheckBox, QFileDialog
 from superqt import QLabeledDoubleRangeSlider, QLabeledDoubleSlider
 # from magicgui import magic_factory, magicgui
 import numpy as np
@@ -181,6 +181,18 @@ class KernelQWidget(QWidget):
         self.but_filter.setText('Filter spots')
         self.but_filter.clicked.connect(self._filter_spots)
 
+        self.but_save_spots = QPushButton()
+        self.but_save_spots.setText('Save spots')
+        self.but_save_spots.clicked.connect(self._save_spots)
+        self.but_load_spots = QPushButton()
+        self.but_load_spots.setText('Load spots')
+        self.but_load_spots.clicked.connect(self._load_spots)
+        self.but_save_parameters = QPushButton()
+        self.but_save_parameters.setText('Save detection parameters')
+        self.but_save_parameters.clicked.connect(self._save_parameters)
+        self.but_load_parameters = QPushButton()
+        self.but_load_parameters.setText('Load detection parameters')
+        self.but_load_parameters.clicked.connect(self._load_parameters)
 
 
         # general layout of the widget
@@ -265,10 +277,18 @@ class KernelQWidget(QWidget):
         filterLayout.addWidget(self.chk_filter_dist_center, 5, 2)
         filterLayout.addWidget(self.but_filter, 6, 1)
 
+        # layout for saving and loading spots data and detection parameters
+        saveloadLayout = QGridLayout()
+        saveloadLayout.addWidget(self.but_save_spots, 0, 0)
+        saveloadLayout.addWidget(self.but_load_spots, 0, 1)
+        saveloadLayout.addWidget(self.but_save_parameters, 1, 0)
+        saveloadLayout.addWidget(self.but_load_parameters, 1, 1)
+
         outerLayout.addLayout(spotsizeLayout)
         outerLayout.addLayout(dogLayout)
         outerLayout.addLayout(fitLayout)
         outerLayout.addLayout(filterLayout)
+        outerLayout.addLayout(saveloadLayout)
 
         self.setLayout(outerLayout)
 
@@ -506,8 +526,8 @@ class KernelQWidget(QWidget):
         self.sigma_ratios = self.sigmas_z / self.sigmas_xy
 
         # update range of filters
-        p_mini = 2
-        p_maxi = 98
+        p_mini = 5
+        p_maxi = 95
         self.sld_filter_amplitude_range.setRange(np.percentile(self.amplitudes, p_mini), np.percentile(self.amplitudes, p_maxi))
         self.sld_filter_sigma_xy_range.setRange(np.percentile(self.sigmas_xy, p_mini), np.percentile(self.sigmas_xy, p_maxi))
         self.sld_filter_sigma_z_range.setRange(np.percentile(self.sigmas_z, p_mini), np.percentile(self.sigmas_z, p_maxi))
@@ -562,7 +582,85 @@ class KernelQWidget(QWidget):
                 del self.viewer.layers['filtered spots']
             self.viewer.add_points(self.centers[self.spot_select], name='filtered spots', blending='additive', size=3, face_color='b')
             
+
+    def _save_spots(self):
+
+            # save the results
+            if not hasattr(self, 'spot_select'):
+                self.spot_select = np.full(len(self.centers), np.nan)
+            if self.centers.shape[1] == 3:
+                df_spots = pd.DataFrame({
+                    'amplitudes': self.amplitudes,
+                    'z': self.centers[:,0],
+                    'y': self.centers[:,1],
+                    'x': self.centers[:,2],
+                    'sigmas_xy': self.sigmas_xy,
+                    'sigmas_z': self.sigmas_z,
+                    'offsets': self.offsets,
+                    'chi_squareds': self.chi_squared,
+                    'dist_center': self.dist_center,
+                    'spot_select': self.spot_select,
+                })
+            else:
+                df_spots = pd.DataFrame({
+                    'amplitudes': self.amplitudes,
+                    'y': self.centers[:,0],
+                    'x': self.centers[:,1],
+                    'sigmas_xy': self.sigmas_xy,
+                    'offsets': self.offsets,
+                    'chi_squareds': self.chi_squared,
+                    'dist_center': self.dist_center,
+                    'spot_select': self.spot_select,
+                })
+
+            path_save = QFileDialog.getSaveFileName(self, 'Export spots data')[0]
+            if path_save != '':
+                if not path_save.endswith('.csv'):
+                    path_save = path_save + '.csv'
+                df_spots.to_csv(path_save, index=False)
+
+
+    def _load_spots(self):
+
+        path_load = QFileDialog.getOpenFileName(self,"Load spots data","","CSV Files (*.csv);;All Files (*)")[0]
+        if path_load != '':
+            df_spots = pd.read_csv(path_load)
+            self.amplitudes = df_spots['amplitudes']
+            self.sigmas_xy = df_spots['sigmas_xy']
+            self.offsets = df_spots['offsets']
+            self.chi_squareds = df_spots['chi_squareds']
+            self.dist_center = df_spots['dist_center']
+            self.spot_select = df_spots['spot_select']
+            if 'z' in df_spots.columns:
+                self.centers = np.zeros((len(df_spots['x']), 3))
+                self.centers[:, 0] = df_spots['z']
+                self.centers[:, 1] = df_spots['y']
+                self.centers[:, 2] = df_spots['x']
+                self.sigmas_z = df_spots['sigmas_z']
+                self.sigma_ratios = self.sigmas_z / self.sigmas_xy
+            else:
+                self.centers = np.zeros((len(df_spots['x']), 2))
+                self.centers[:, 0] = df_spots['y']
+                self.centers[:, 1] = df_spots['x']
+            
+            if 'fitted spots' in self.viewer.layers:
+                del self.viewer.layers['fitted spots']
+            self.viewer.add_points(self.centers, name='fitted spots', blending='additive', size=3, face_color='g')
+            # display filtered spots if there was a filtering
+            if ~np.all(self.spot_select.isna()):
+                if 'filtered spots' in self.viewer.layers:
+                    del self.viewer.layers['filtered spots']
+                self.viewer.add_points(self.centers[self.spot_select], name='filtered spots', blending='additive', size=3, face_color='b')
+            
+
+    def _save_parameters(self):
+        pass
+
+    def _load_parameters(self):
+        pass
+
         
+
 if __name__ == "__main__":
     viewer = napari.Viewer()
     napari.run()
