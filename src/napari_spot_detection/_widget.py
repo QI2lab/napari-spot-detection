@@ -6,6 +6,7 @@ see: https://napari.org/plugins/stable/guides.html#widgets
 
 Replace code below according to your needs.
 """
+
 from qtpy.QtCore import Qt
 from qtpy.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QGridLayout, QPushButton, QSlider, QLabel, QLineEdit, QCheckBox, QFileDialog
 from superqt import QLabeledDoubleRangeSlider, QLabeledDoubleSlider
@@ -74,11 +75,7 @@ class FullSlider(QWidget):
         self._convert_value()
 
 
-class KernelQWidget(QWidget):
-    # your QWidget.__init__ can optionally request the napari viewer instance
-    # in one of two ways:
-    # 1. use a parameter called `napari_viewer`, as done here
-    # 2. use a type annotation of 'napari.viewer.Viewer' for any parameter
+class SpotDetection(QWidget):
     def __init__(self, napari_viewer):
         super().__init__()
         self.viewer = napari_viewer
@@ -295,9 +292,6 @@ class KernelQWidget(QWidget):
 
         self.setLayout(outerLayout)
 
-    def _on_slide(self):
-        # print("sigma is {:.2f}".format(self.sld_sigma_xy_small.value))
-        pass
 
     def _make_sigmas(self):
         """
@@ -311,7 +305,6 @@ class KernelQWidget(QWidget):
         sigma_z = sz / 2.355
         # to reproduce LoG with Dog we need sigma_big = 1.6 * sigma_small
         sigma_ratio = float(self.txt_sigma_ratio.text())
-        # sigma_ratio = 2
         sigma_xy_small = sigma_xy / sigma_ratio**(1/2)
         sigma_xy_large = sigma_xy * sigma_ratio**(1/2)
         sigma_z_small = sigma_z / sigma_ratio**(1/2)
@@ -338,11 +331,17 @@ class KernelQWidget(QWidget):
             kernel_small = localize.get_filter_kernel(filter_sigma_small, pixel_sizes, sigma_cutoff)
             kernel_large = localize.get_filter_kernel(filter_sigma_large, pixel_sizes, sigma_cutoff)
 
-            img = self.viewer.layers[0].data
-            img_high_pass = localize.filter_convolve(img, kernel_small, use_gpu=True)
-            img_low_pass = localize.filter_convolve(img, kernel_large, use_gpu=True)
+            # analyze specific image if selected, or first available one if no selection
+            if len(self.viewer.layers.selection) == 0:
+                img = self.viewer.layers[0].data
+            else:
+                # selection is a set, we need some wrangle to get the first element
+                first_selected_layer = next(iter(self.viewer.layers.selection))
+                img = first_selected_layer.data
+            
+            img_high_pass = localize.filter_convolve(img, kernel_small, use_gpu=False)
+            img_low_pass = localize.filter_convolve(img, kernel_large, use_gpu=False)
             img_filtered = img_high_pass - img_low_pass
-            # im_gauss = gaussian_filter(self.viewer.layers[0].data, sigma=self.sld_sigma_xy_small.value)
             if 'filtered' not in self.viewer.layers:
                 self.viewer.add_image(img_filtered, name='filtered')
             else:
@@ -352,6 +351,7 @@ class KernelQWidget(QWidget):
             if self.auto_params:
                 self.sld_blob_thresh.set_value(blob_thresh)
     
+
     def _find_peaks(self):
         """
         Threshold the image resulting from the DoG filter and detect peaks.
@@ -371,13 +371,14 @@ class KernelQWidget(QWidget):
             # array of size nz, ny, nx of True
 
             maxis = ndi.maximum_filter(img_filtered, footprint=np.ones(min_separations))
-            self.centers_guess_inds, self.amps = localize.find_peak_candidates(img_filtered, footprint, threshold=blob_thresh)
+            self.centers_guess_inds, self.amps = localize.find_peak_candidates(img_filtered, footprint, threshold=blob_thresh, use_gpu_filter=False)
             if 'local maxis' not in self.viewer.layers:
                 self.viewer.add_points(self.centers_guess_inds, name='local maxis', blending='additive', size=3, face_color='r')
             else:
                 self.viewer.layers['local maxis'].data = self.centers_guess_inds
             if self.auto_params:
                 self._make_roi_sizes()
+
 
     def _make_roi_sizes(self):
         """
@@ -394,6 +395,7 @@ class KernelQWidget(QWidget):
         self.txt_min_roi_size_xy.setText(str(min_fit_roi_sizes[-1]))
         self.txt_min_roi_size_z.setText(str(min_fit_roi_sizes[0]))
     
+
     def get_roi_coordinates(self, centers, sizes, max_coords_val, min_sizes, return_sizes=True):
         """
         Make pairs of (z, y, x) coordinates defining an ROI.
@@ -505,7 +507,6 @@ class KernelQWidget(QWidget):
                 self.sigma_z, 
                 roi.min(),
             ])
-            # all_init_params.append(init_params)
             fit_results = localize.fit_gauss_roi(
                 roi, 
                 (localize.get_coords(roi_sizes[i], drs=[1, 1, 1])), 
@@ -547,6 +548,7 @@ class KernelQWidget(QWidget):
         else:
             self.viewer.layers['fitted spots'].data = self.centers
     
+
     def _filter_spots(self):
         """
         Filter out spots based on gaussian fit results.
@@ -575,7 +577,6 @@ class KernelQWidget(QWidget):
             selectors.append(self.chi_squared >= self.sld_filter_chi_squared.value())
         if self.chk_filter_dist_center.isChecked():
             selectors.append(self.dist_center <= self.sld_filter_dist_center.value())
-
 
         if len(selectors) == 0:
             print("Check at list one box to activate filters")
@@ -745,45 +746,11 @@ if __name__ == "__main__":
     viewer = napari.Viewer()
     napari.run()
 
-# class ExampleQWidget(QWidget):
-#     # your QWidget.__init__ can optionally request the napari viewer instance
-#     # in one of two ways:
-#     # 1. use a parameter called `napari_viewer`, as done here
-#     # 2. use a type annotation of 'napari.viewer.Viewer' for any parameter
-#     def __init__(self, napari_viewer):
-#         super().__init__()
-#         self.viewer = napari_viewer
-
-#         btn = QPushButton("Click me!")
-#         btn.clicked.connect(self._on_click)
-
-#         self.setLayout(QHBoxLayout())
-#         self.layout().addWidget(btn)
-
-#     def _on_click(self):
-#         print("napari has", len(self.viewer.layers), "layers")
-
-
-# @magic_factory
-# def example_magic_widget(img_layer: "napari.layers.Image"):
-#     print(f"you have selected {img_layer}")
-
-
-# Uses the `autogenerate: true` flag in the plugin manifest
-# to indicate it should be wrapped as a magicgui to autogenerate
-# a widget.
-# def example_function_widget(img_layer: "napari.layers.Image"):
-#     print(f"you have selected {img_layer}")
-
-# sigma_options = {
-#     'label': 'sigma of gaussian kernel:', 
-#     'widget_type':'Slider',
-#     'min': 0.1, 
-#     'max' : 20.0, 
-#     'step': 0.1,
-#     }
-# param_options = {'sigma':sigma_options})
-# def make_kernel(sigma: float = 1):
-#     print(f"sigma is {sigma}")
-
-# kernel_magicgui_widget = magicgui(make_kernel, sigma=sigma_options, auto_call=False)
+# TODO:
+#   - all functions compatible with 2D data
+#   - add tilted image parameters for OPM data
+#   - add raw estimation of spots parameters by drawing box around one spot and estimating (fitting gaussian?) parameters
+#   - add panel to select data from big images, random tile, specific channel, etc...
+#   - add parallel computation (Tiler + Dask) fr big images
+#   - add manual annotation and automatic training for filtering parameters
+#   - add variable range for all sliders

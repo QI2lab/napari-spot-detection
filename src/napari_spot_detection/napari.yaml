@@ -2,35 +2,9 @@ name: napari-spot-detection
 display_name: Spot detection
 contributions:
   commands:
-    - id: napari-spot-detection.make_kernel_qwidget
-      python_name: napari_spot_detection._widget:KernelQWidget
-      title: Kernel QWidget
-    # - id: napari-spot-detection.widget_make_kernel
-    #   python_name: napari_spot_detection._widget:make_kernel
-    #   title: Make kernel
-    # - id: napari-spot-detection.make_qwidget
-    #   python_name: napari_spot_detection._widget:ExampleQWidget
-    #   title: Make example QWidget
-    # - id: napari-spot-detection.make_magic_widget
-      # python_name: napari_spot_detection._widget:example_magic_widget
-      # title: Make example magic widget
-    # - id: napari-spot-detection.make_kernel_magicgui_widget
-      # python_name: napari_spot_detection._widget:kernel_magicgui_widget
-      # title: Make example magicgui widget
-    # - id: napari-spot-detection.make_func_widget
-    #   python_name: napari_spot_detection._widget:example_function_widget
-    #   title: Make example function widget 
+    - id: napari-spot-detection.make_spot_detection
+      python_name: napari_spot_detection._widget:SpotDetection
+      title: Spot detection
   widgets:
-    - command: napari-spot-detection.make_kernel_qwidget
-      display_name: Kernel QWidget
-    # - command: napari-spot-detection.widget_make_kernel
-    #   display_name: Make kernel
-    # - command: napari-spot-detection.make_qwidget
-    #   display_name: Example QWidget
-    # - command: napari-spot-detection.make_magic_widget
-    #   display_name: Example Magic Widget
-    # - command: napari-spot-detection.make_kernel_magicgui_widget
-    #   display_name: Example Magic GUI Widget
-    # - command: napari-spot-detection.make_func_widget
-    #   autogenerate: true
-    #   display_name: Example Function Widget 
+    - command: napari-spot-detection.make_spot_detection
+      display_name: Spot detection
