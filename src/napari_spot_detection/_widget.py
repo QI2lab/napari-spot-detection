@@ -25,6 +25,12 @@ from localize_psf import fit
 import localize_psf.fit_psf as psf
 from localize_psf import localize
 
+from pathlib import Path
+import sys
+path_root = Path(__file__).parents[1]
+sys.path.append(str(path_root))
+from napari_spot_detection import _image_processing as ip
+
 
 class FullSlider(QWidget):
     """
@@ -98,16 +104,16 @@ class SpotDetection(QWidget):
 
         # DoG blob detection widgets
         self.sld_sigma_xy_small = FullSlider(range=(0.1, 20), step=0.1, label="sigma xy small")
-        self.sld_sigma_xy_small.valueChanged.connect(self._on_slide)
         self.sld_sigma_xy_large = FullSlider(range=(0.1, 20), step=0.1, label="sigma xy large")
-        self.sld_sigma_xy_large.valueChanged.connect(self._on_slide)
         self.sld_sigma_z_small = FullSlider(range=(0.1, 20), step=0.1, label="sigma z small")
-        self.sld_sigma_z_small.valueChanged.connect(self._on_slide)
         self.sld_sigma_z_large = FullSlider(range=(0.1, 20), step=0.1, label="sigma z large")
-        self.sld_sigma_z_large.valueChanged.connect(self._on_slide)
 
-        self.sld_blob_thresh = FullSlider(range=(0.1, 20), step=0.1, label="Blob threshold")
-        self.sld_blob_thresh.valueChanged.connect(self._on_slide)
+        # self.sld_blob_thresh = FullSlider(range=(0.1, 20), step=0.1, label="Blob threshold")
+        self.lab_blob_thresh = QLabel('Blob threshold')
+        self.sld_blob_thresh = QLabeledDoubleSlider(Qt.Orientation.Horizontal)
+        self.sld_blob_thresh.setRange(0.1, 20)
+        self.sld_blob_thresh.setValue(10)
+        # self.sld_blob_thresh.setBarIsRigid(False) not implemented for QLabeledDoubleSlider :'(
 
         self.but_dog = QPushButton()
         self.but_dog.setText('Apply DoG')
@@ -116,6 +122,15 @@ class SpotDetection(QWidget):
         self.but_find_peaks = QPushButton()
         self.but_find_peaks.setText('Find peaks')
         self.but_find_peaks.clicked.connect(self._find_peaks)
+
+        self.lab_merge_peaks = QLabel('Merge peaks distances (xy, z)')
+        self.txt_merge_peaks_xy = QLineEdit()
+        self.txt_merge_peaks_xy.setText('5')
+        self.txt_merge_peaks_z = QLineEdit()
+        self.txt_merge_peaks_z.setText('5')
+        self.but_merge_peaks = QPushButton()
+        self.but_merge_peaks.setText('Merge peaks')
+        self.but_merge_peaks.clicked.connect(self._merge_peaks)
 
         # gaussian fitting widgets
         self.lab_roi_sizes = QLabel('Fit ROI sizes (xy, z)')
@@ -137,6 +152,10 @@ class SpotDetection(QWidget):
         self.but_fit = QPushButton()
         self.but_fit.setText('Fit spots')
         self.but_fit.clicked.connect(self._fit_spots)
+
+        self.but_plot_fitted = QPushButton()
+        self.but_plot_fitted.setText('Plot fitted parameters')
+        self.but_plot_fitted.clicked.connect(self._plot_fitted_params)
 
         # spot filtering widgets
         self.lab_filter_amplitude_range = QLabel('Range amplitude')
@@ -220,8 +239,17 @@ class SpotDetection(QWidget):
         dogLayout.addWidget(self.sld_sigma_z_small)
         dogLayout.addWidget(self.sld_sigma_z_large)
         dogLayout.addWidget(self.but_dog)
-        dogLayout.addWidget(self.sld_blob_thresh)
+        blobThreshLayout = QHBoxLayout()
+        blobThreshLayout.addWidget(self.lab_blob_thresh)
+        blobThreshLayout.addWidget(self.sld_blob_thresh)
+        dogLayout.addLayout(blobThreshLayout)
         dogLayout.addWidget(self.but_find_peaks)
+        mergePeaksLayout = QHBoxLayout()
+        mergePeaksLayout.addWidget(self.lab_merge_peaks)
+        mergePeaksLayout.addWidget(self.txt_merge_peaks_xy)
+        mergePeaksLayout.addWidget(self.txt_merge_peaks_z)
+        dogLayout.addLayout(mergePeaksLayout)
+        dogLayout.addWidget(self.but_merge_peaks)
         # layout for fitting gaussian spots
         fitLayout = QVBoxLayout()
         roisizesLayout = QHBoxLayout()
@@ -236,6 +264,7 @@ class SpotDetection(QWidget):
         fitLayout.addLayout(minroisizesLayout)
         fitLayout.addWidget(self.but_auto_roi)
         fitLayout.addWidget(self.but_fit)
+        fitLayout.addWidget(self.but_plot_fitted)
 
         # layout for filtering gaussian spots
         filterLayout = QGridLayout()
@@ -347,9 +376,11 @@ class SpotDetection(QWidget):
             else:
                 self.viewer.layers['filtered'].data = img_filtered
             # basic auto thresholding
-            blob_thresh = np.percentile(img_filtered.ravel(), 95)
             if self.auto_params:
-                self.sld_blob_thresh.set_value(blob_thresh)
+                blob_thresh = np.percentile(img_filtered.ravel(), 95)
+                self.sld_blob_thresh.setRange(np.percentile(img_filtered.ravel(), 10), 
+                                              np.percentile(img_filtered.ravel(), 99.9))
+                self.sld_blob_thresh.setValue(blob_thresh)
     
 
     def _find_peaks(self):
@@ -359,7 +390,7 @@ class SpotDetection(QWidget):
         if 'filtered' not in self.viewer.layers:
             print("Run a DoG filter on an image first")
         else:
-            blob_thresh = self.sld_blob_thresh.value
+            blob_thresh = self.sld_blob_thresh.value()
             img_filtered = self.viewer.layers['filtered'].data
             img_filtered[img_filtered < blob_thresh] = 0
 
@@ -378,6 +409,36 @@ class SpotDetection(QWidget):
                 self.viewer.layers['local maxis'].data = self.centers_guess_inds
             if self.auto_params:
                 self._make_roi_sizes()
+            self.peaks_layer_name = 'local maxis'
+            self.use_centers_inds = self.centers_guess_inds
+
+
+    def _merge_peaks(self):
+        """
+        Merge peaks that are close to each other.
+        """
+
+        if 'local maxis' not in self.viewer.layers:
+            print("Find peaks first")
+        else:
+            coords = self.centers_guess_inds
+            max_xy = float(self.txt_merge_peaks_xy.text())
+            max_z = float(self.txt_merge_peaks_z.text())
+            weight_img = self.viewer.layers['filtered'].data # or use raw data: self.viewer.layers[0].data
+            self.merged_centers_inds = ip.filter_nearby_peaks(coords, max_z, max_xy, weight_img)
+            # need ravel_multi_index to get pixel values of weight_img at several 3D coordinates
+            amplitudes_id = np.ravel_multi_index(self.merged_centers_inds.astype(int).transpose(), weight_img.shape)
+            self.amps = weight_img.ravel()[amplitudes_id]
+            nb_points = len(self.merged_centers_inds)
+            print(f"Found {nb_points} points separated by dxy > {max_xy} and dz > {max_z}")
+
+            if 'merged maxis' not in self.viewer.layers:
+                self.viewer.add_points(self.merged_centers_inds, name='merged maxis', 
+                                       blending='additive', size=3, face_color='g')
+            else:
+                self.viewer.layers['merged maxis'].data = self.merged_centers_inds
+            self.peaks_layer_name = 'merged maxis'
+            self.use_centers_inds = self.merged_centers_inds
 
 
     def _make_roi_sizes(self):
@@ -387,8 +448,10 @@ class SpotDetection(QWidget):
 
         sx = sy = float(self.txt_spot_size_xy.text())
         sz = float(self.txt_spot_size_z.text())
-        fit_roi_sizes = (1.5 * np.array([sz, sy, sx])).astype(int)
+        fit_roi_sizes = (2.355 * np.array([sz, sy, sx])).astype(int)
         min_fit_roi_sizes = fit_roi_sizes * 0.5
+        self.fit_roi_sizes = fit_roi_sizes
+        self.min_fit_roi_sizes = min_fit_roi_sizes
 
         self.txt_roi_size_xy.setText(str(fit_roi_sizes[-1]))
         self.txt_roi_size_z.setText(str(fit_roi_sizes[0]))
@@ -480,13 +543,14 @@ class SpotDetection(QWidget):
         min_fit_roi_sizes = np.array([min_roi_size_z, min_roi_size_xy, min_roi_size_xy])
 
         roi_coords, roi_sizes = self.get_roi_coordinates(
-            centers = self.centers_guess_inds, 
+            centers = self.use_centers_inds,  # first detected peaks or merged peaks
             sizes = fit_roi_sizes, 
             max_coords_val = np.array(img.shape) - 1, 
             min_sizes = min_fit_roi_sizes,
         )
         nb_rois = roi_coords.shape[0]
-
+        # centers_guess is different from centers_guess_inds because each ROI 
+        # can be smaller on the borders of the image
         centers_guess = (roi_sizes / 2)
 
 
@@ -533,8 +597,8 @@ class SpotDetection(QWidget):
         self.sigma_ratios = self.sigmas_z / self.sigmas_xy
 
         # update range of filters
-        p_mini = 5
-        p_maxi = 95
+        p_mini = 1
+        p_maxi = 99
         if self.auto_params:
             self.sld_filter_amplitude_range.setRange(np.percentile(self.amplitudes, p_mini), np.percentile(self.amplitudes, p_maxi))
             self.sld_filter_sigma_xy_range.setRange(np.percentile(self.sigmas_xy, p_mini), np.percentile(self.sigmas_xy, p_maxi))
@@ -548,6 +612,44 @@ class SpotDetection(QWidget):
         else:
             self.viewer.layers['fitted spots'].data = self.centers
     
+
+    def _plot_fitted_params(self):
+        """
+        Generate distribution plots of fitted parameters to help selecting
+        appropriate threshold values for spot filtering.
+        """
+
+        p_mini = 1
+        p_maxi = 99
+
+        plt.figure()
+        plt.hist(self.amplitudes, bins='auto', range=self.sld_filter_amplitude_range.value())
+        plt.title("Distribution of amplitude values")
+
+        plt.figure()
+        plt.hist(self.sigmas_xy, bins='auto', range=self.sld_filter_sigma_xy_range.value())
+        plt.title("Distribution of sigmas_xy values")
+
+        plt.figure()
+        plt.hist(self.sigmas_z, bins='auto', range=self.sld_filter_sigma_z_range.value())
+        plt.title("Distribution of sigmas_z values")
+
+        plt.figure()
+        plt.hist(self.sigma_ratios, bins='auto', range=self.sld_filter_sigma_ratio_range.value())
+        plt.title("Distribution of sigma_ratios values")
+
+        plt.figure()
+        plt.hist(self.chi_squared, bins='auto', range=(np.percentile(self.chi_squared, p_mini), 
+                                                       np.percentile(self.chi_squared, p_maxi)))
+        plt.title("Distribution of chi_squared values")
+
+        plt.figure()
+        plt.hist(self.dist_center, bins='auto', range=(np.percentile(self.dist_center, p_mini), 
+                                                       np.percentile(self.dist_center, p_maxi)))
+        plt.title("Distribution of dist_center values")
+
+        plt.show()
+
 
     def _filter_spots(self):
         """
@@ -582,8 +684,6 @@ class SpotDetection(QWidget):
             print("Check at list one box to activate filters")
         else:
             self.spot_select = np.logical_and.reduce(selectors)
-            print(self.spot_select.shape)
-            print(self.spot_select[:5])
         
             # self.viewer.layers['filtered spots'].data = self.centers[self.spot_select] doesn't work
             if 'filtered spots' in self.viewer.layers:
@@ -670,7 +770,7 @@ class SpotDetection(QWidget):
             'sld_sigma_xy_small': self.sld_sigma_xy_small.value,
             'sld_sigma_z_large': self.sld_sigma_z_large.value,
             'sld_sigma_xy_large': self.sld_sigma_xy_large.value,
-            'sld_blob_thresh': self.sld_blob_thresh.value,
+            'sld_blob_thresh': self.sld_blob_thresh.value(),
             'txt_roi_size_z': float(self.txt_roi_size_z.text()),
             'txt_roi_size_xy': float(self.txt_roi_size_xy.text()),
             'txt_min_roi_size_z': float(self.txt_min_roi_size_z.text()),
@@ -718,7 +818,7 @@ class SpotDetection(QWidget):
             self.sld_sigma_xy_small.set_value(detection_parameters['sld_sigma_xy_small'])
             self.sld_sigma_z_large.set_value(detection_parameters['sld_sigma_z_large'])
             self.sld_sigma_xy_large.set_value(detection_parameters['sld_sigma_xy_large'])
-            self.sld_blob_thresh.set_value(detection_parameters['sld_blob_thresh'])
+            self.sld_blob_thresh.setValue(detection_parameters['sld_blob_thresh'])
             self.txt_roi_size_z.setText(str(detection_parameters['txt_roi_size_z']))
             self.txt_roi_size_xy.setText(str(detection_parameters['txt_roi_size_xy']))
             self.txt_min_roi_size_z.setText(str(detection_parameters['txt_min_roi_size_z']))
