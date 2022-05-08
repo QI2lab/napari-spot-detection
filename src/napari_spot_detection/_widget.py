@@ -417,7 +417,9 @@ class SpotDetection(QWidget):
             if self.auto_params:
                 self._make_roi_sizes()
             self.peaks_layer_name = 'local maxis'
+            # used variables for gaussian fit if peaks are not merged
             self.use_centers_inds = self.centers_guess_inds
+            self.use_amps = self.amps
 
 
     def _merge_peaks(self):
@@ -431,11 +433,17 @@ class SpotDetection(QWidget):
             coords = self.centers_guess_inds
             max_xy = float(self.txt_merge_peaks_xy.text())
             max_z = float(self.txt_merge_peaks_z.text())
-            weight_img = self.viewer.layers['filtered'].data # or use raw data: self.viewer.layers[0].data
-            self.merged_centers_inds = ip.filter_nearby_peaks(coords, max_z, max_xy, weight_img)
-            # need ravel_multi_index to get pixel values of weight_img at several 3D coordinates
-            amplitudes_id = np.ravel_multi_index(self.merged_centers_inds.astype(int).transpose(), weight_img.shape)
-            self.amps = weight_img.ravel()[amplitudes_id]
+
+            # network based version
+            # weight_img = self.viewer.layers['filtered'].data # or use raw data: self.viewer.layers[0].data
+            # self.merged_centers_inds = ip.filter_nearby_peaks(coords, max_z, max_xy, weight_img)
+            # # need ravel_multi_index to get pixel values of weight_img at several 3D coordinates
+            # amplitudes_id = np.ravel_multi_index(self.merged_centers_inds.astype(int).transpose(), weight_img.shape)
+            # self.amps = weight_img.ravel()[amplitudes_id]
+
+            # Peter's version
+            self.merged_centers_inds, inds_comb = localize.filter_nearby_peaks(coords, max_xy, max_z, weights=self.amps, mode="average")
+            self.merged_amps = self.amps[inds_comb]
             nb_points = len(self.merged_centers_inds)
             print(f"Found {nb_points} points separated by dxy > {max_xy} and dz > {max_z}")
 
@@ -444,8 +452,10 @@ class SpotDetection(QWidget):
                                        blending='additive', size=3, face_color='g')
             else:
                 self.viewer.layers['merged maxis'].data = self.merged_centers_inds
+            # used variables for gaussian fit now that peaks are merged
             self.peaks_layer_name = 'merged maxis'
             self.use_centers_inds = self.merged_centers_inds
+            self.use_amps = self.merged_amps
 
 
     def _make_roi_sizes(self):
@@ -570,7 +580,7 @@ class SpotDetection(QWidget):
             roi = self.extract_ROI(img, roi_coords[i])
             # fit gaussian in ROI
             init_params = np.array([
-                self.amps[i], 
+                self.use_amps[i], 
                 centers_guess[i, 2],
                 centers_guess[i, 1],
                 centers_guess[i, 0],
