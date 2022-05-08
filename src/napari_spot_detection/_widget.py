@@ -14,6 +14,7 @@ from superqt import QLabeledDoubleRangeSlider, QLabeledDoubleSlider
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
+import itertools
 import json
 import napari
 import scipy.signal
@@ -156,6 +157,9 @@ class SpotDetection(QWidget):
         self.but_plot_fitted = QPushButton()
         self.but_plot_fitted.setText('Plot fitted parameters')
         self.but_plot_fitted.clicked.connect(self._plot_fitted_params)
+        self.but_plot_fitted_2D = QPushButton()
+        self.but_plot_fitted_2D.setText('Plot 2D distributions')
+        self.but_plot_fitted_2D.clicked.connect(self._plot_fitted_params_2D)
 
         # spot filtering widgets
         self.lab_filter_amplitude_range = QLabel('Range amplitude')
@@ -264,7 +268,10 @@ class SpotDetection(QWidget):
         fitLayout.addLayout(minroisizesLayout)
         fitLayout.addWidget(self.but_auto_roi)
         fitLayout.addWidget(self.but_fit)
-        fitLayout.addWidget(self.but_plot_fitted)
+        plotFittedLayout = QHBoxLayout()
+        plotFittedLayout.addWidget(self.but_plot_fitted)
+        plotFittedLayout.addWidget(self.but_plot_fitted_2D)
+        fitLayout.addLayout(plotFittedLayout)
 
         # layout for filtering gaussian spots
         filterLayout = QGridLayout()
@@ -649,6 +656,50 @@ class SpotDetection(QWidget):
         plt.title("Distribution of dist_center values")
 
         plt.show()
+    
+
+    def _plot_fitted_params_2D(self):
+        """
+        Generate 2D distribution plots of fitted parameters to help selecting
+        appropriate threshold values for spot filtering.
+        """
+
+        p_mini = 1
+        p_maxi = 99
+
+        distrib = {
+            'amplitudes': {'data': self.amplitudes, 
+                           'range': self.sld_filter_amplitude_range.value()},
+            'sigmas_xy': {'data': self.sigmas_xy, 
+                          'range': self.sld_filter_sigma_xy_range.value()},
+            'sigmas_z': {'data': self.sigmas_z, 
+                         'range': self.sld_filter_sigma_z_range.value()},
+            'sigma_ratios': {'data': self.sigma_ratios, 
+                             'range': self.sld_filter_sigma_ratio_range.value()},
+            'chi_squared': {'data': self.chi_squared, 
+                            'range': (np.percentile(self.chi_squared, p_mini), 
+                                      np.percentile(self.chi_squared, p_maxi))},
+            'dist_center': {'data': self.dist_center, 
+                            'range': (np.percentile(self.dist_center, p_mini), 
+                                      np.percentile(self.dist_center, p_maxi))},
+        }
+        
+        var_labels = list(distrib.keys())
+        var_combi = itertools.combinations(var_labels, 2)
+        for var_x, var_y in var_combi:
+            x_mini, x_maxi = distrib[var_x]['range']
+            y_mini, y_maxi = distrib[var_y]['range']
+            x_select = np.logical_and(distrib[var_x]['data'] >= x_mini, distrib[var_x]['data'] <= x_maxi)
+            y_select = np.logical_and(distrib[var_y]['data'] >= y_mini, distrib[var_y]['data'] <= y_maxi)
+            x_data = distrib[var_x]['data'][x_select]
+            y_data = distrib[var_y]['data'][y_select]
+
+            plt.figure()
+            plt.scatter(x_data, y_data, s=10, marker='.', c='b', alpha=0.5)
+            plt.title(f"Distributions of {var_x} and {var_y}")
+            plt.xlabel(var_x)
+            plt.ylabel(var_y)
+            plt.show()
 
 
     def _filter_spots(self):
