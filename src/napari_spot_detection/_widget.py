@@ -74,7 +74,7 @@ class FullSlider(QWidget):
         self.value = self.sld.value() * self.step
         self.readout.setText("{:.2f}".format(self.value))
 
-    def set_value(self, value):
+    def setValue(self, value):
         # first set the slider at the correct position
         self.sld.setValue(int(value / self.step))
         # then convert the slider position to have the value
@@ -112,7 +112,7 @@ class SpotDetection(QWidget):
         # self.sld_blob_thresh = FullSlider(range=(0.1, 20), step=0.1, label="Blob threshold")
         self.lab_blob_thresh = QLabel('Blob threshold')
         self.sld_blob_thresh = QLabeledDoubleSlider(Qt.Orientation.Horizontal)
-        self.sld_blob_thresh.setRange(0.1, 20)
+        self.sld_blob_thresh.setRange(0, 50)
         self.sld_blob_thresh.setValue(10)
         # self.sld_blob_thresh.setBarIsRigid(False) not implemented for QLabeledDoubleSlider :'(
 
@@ -345,10 +345,10 @@ class SpotDetection(QWidget):
         sigma_xy_large = sigma_xy * sigma_ratio**(1/2)
         sigma_z_small = sigma_z / sigma_ratio**(1/2)
         sigma_z_large = sigma_z * sigma_ratio**(1/2)
-        self.sld_sigma_xy_small.set_value(sigma_xy_small)
-        self.sld_sigma_xy_large.set_value(sigma_xy_large)
-        self.sld_sigma_z_small.set_value(sigma_z_small)
-        self.sld_sigma_z_large.set_value(sigma_z_large)
+        self.sld_sigma_xy_small.setValue(sigma_xy_small)
+        self.sld_sigma_xy_large.setValue(sigma_xy_large)
+        self.sld_sigma_z_small.setValue(sigma_z_small)
+        self.sld_sigma_z_large.setValue(sigma_z_large)
         self.sigma_xy = sigma_xy
         self.sigma_z = sigma_z
 
@@ -386,7 +386,7 @@ class SpotDetection(QWidget):
             if self.auto_params:
                 blob_thresh = np.percentile(img_filtered.ravel(), 95)
                 self.sld_blob_thresh.setRange(np.percentile(img_filtered.ravel(), 10), 
-                                              np.percentile(img_filtered.ravel(), 99.9))
+                                              img_filtered.max())
                 self.sld_blob_thresh.setValue(blob_thresh)
     
 
@@ -420,6 +420,7 @@ class SpotDetection(QWidget):
             # used variables for gaussian fit if peaks are not merged
             self.use_centers_inds = self.centers_guess_inds
             self.use_amps = self.amps
+            self.peaks_merged = False
 
 
     def _merge_peaks(self):
@@ -456,6 +457,7 @@ class SpotDetection(QWidget):
             self.peaks_layer_name = 'merged maxis'
             self.use_centers_inds = self.merged_centers_inds
             self.use_amps = self.merged_amps
+            self.peaks_merged = True
 
 
     def _make_roi_sizes(self):
@@ -701,8 +703,9 @@ class SpotDetection(QWidget):
             y_mini, y_maxi = distrib[var_y]['range']
             x_select = np.logical_and(distrib[var_x]['data'] >= x_mini, distrib[var_x]['data'] <= x_maxi)
             y_select = np.logical_and(distrib[var_y]['data'] >= y_mini, distrib[var_y]['data'] <= y_maxi)
-            x_data = distrib[var_x]['data'][x_select]
-            y_data = distrib[var_y]['data'][y_select]
+            select = np.logical_and(x_select, y_select)
+            x_data = distrib[var_x]['data'][select]
+            y_data = distrib[var_y]['data'][select]
 
             plt.figure()
             plt.scatter(x_data, y_data, s=10, marker='.', c='b', alpha=0.5)
@@ -832,6 +835,9 @@ class SpotDetection(QWidget):
             'sld_sigma_z_large': self.sld_sigma_z_large.value,
             'sld_sigma_xy_large': self.sld_sigma_xy_large.value,
             'sld_blob_thresh': self.sld_blob_thresh.value(),
+            'peaks_merged': self.peaks_merged,
+            'txt_merge_peaks_xy': self.txt_merge_peaks_xy.text(),
+            'txt_merge_peaks_z': self.txt_merge_peaks_z.text(),
             'txt_roi_size_z': float(self.txt_roi_size_z.text()),
             'txt_roi_size_xy': float(self.txt_roi_size_xy.text()),
             'txt_min_roi_size_z': float(self.txt_min_roi_size_z.text()),
@@ -875,11 +881,14 @@ class SpotDetection(QWidget):
             self.txt_spot_size_z.setText(str(detection_parameters['txt_spot_size_z']))
             self.txt_spot_size_xy.setText(str(detection_parameters['txt_spot_size_xy']))
             self.txt_sigma_ratio.setText(str(detection_parameters['txt_sigma_ratio']))
-            self.sld_sigma_z_small.set_value(detection_parameters['sld_sigma_z_small'])
-            self.sld_sigma_xy_small.set_value(detection_parameters['sld_sigma_xy_small'])
-            self.sld_sigma_z_large.set_value(detection_parameters['sld_sigma_z_large'])
-            self.sld_sigma_xy_large.set_value(detection_parameters['sld_sigma_xy_large'])
+            self.sld_sigma_z_small.setValue(detection_parameters['sld_sigma_z_small'])
+            self.sld_sigma_xy_small.setValue(detection_parameters['sld_sigma_xy_small'])
+            self.sld_sigma_z_large.setValue(detection_parameters['sld_sigma_z_large'])
+            self.sld_sigma_xy_large.setValue(detection_parameters['sld_sigma_xy_large'])
             self.sld_blob_thresh.setValue(detection_parameters['sld_blob_thresh'])
+            self.peaks_merged = detection_parameters['peaks_merged']
+            self.txt_merge_peaks_xy.setText(str(detection_parameters['txt_merge_peaks_xy']))
+            self.txt_merge_peaks_z.setText(str(detection_parameters['txt_merge_peaks_z']))
             self.txt_roi_size_z.setText(str(detection_parameters['txt_roi_size_z']))
             self.txt_roi_size_xy.setText(str(detection_parameters['txt_roi_size_xy']))
             self.txt_min_roi_size_z.setText(str(detection_parameters['txt_min_roi_size_z']))
@@ -900,6 +909,10 @@ class SpotDetection(QWidget):
             self.sld_filter_chi_squared.setValue(detection_parameters['sld_filter_chi_squared'])
             self.chk_filter_dist_center.setChecked(detection_parameters['chk_filter_dist_center'])
             self.sld_filter_dist_center.setValue(detection_parameters['sld_filter_dist_center'])
+            # generate sigma_xy and sigma_z, but that will overwrite other parameters
+            # if they were not automatically generated with the same function
+            # ideally save sigma_xy and sigma_z to reload them from the json file
+            self._make_sigmas()
 
 
 
