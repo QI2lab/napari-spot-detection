@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import itertools
 import json
+import warnings
 import napari
 import scipy.signal
 import scipy.ndimage as ndi
@@ -830,6 +831,8 @@ class SpotDetection(QWidget):
             'txt_spot_size_z': float(self.txt_spot_size_z.text()),
             'txt_spot_size_xy': float(self.txt_spot_size_xy.text()),
             'txt_sigma_ratio': float(self.txt_sigma_ratio.text()),
+            'sigma_z': self.sigma_z,
+            'sigma_xy': self.sigma_xy,
             'sld_sigma_z_small': self.sld_sigma_z_small.value,
             'sld_sigma_xy_small': self.sld_sigma_xy_small.value,
             'sld_sigma_z_large': self.sld_sigma_z_large.value,
@@ -909,10 +912,14 @@ class SpotDetection(QWidget):
             self.sld_filter_chi_squared.setValue(detection_parameters['sld_filter_chi_squared'])
             self.chk_filter_dist_center.setChecked(detection_parameters['chk_filter_dist_center'])
             self.sld_filter_dist_center.setValue(detection_parameters['sld_filter_dist_center'])
-            # generate sigma_xy and sigma_z, but that will overwrite other parameters
-            # if they were not automatically generated with the same function
-            # ideally save sigma_xy and sigma_z to reload them from the json file
-            self._make_sigmas()
+            if 'sigma_z' in detection_parameters and 'sigma_xy' in detection_parameters:
+                self.sigma_z = detection_parameters['sigma_z']
+                self.sigma_xy = detection_parameters['sigma_xy']
+            else:
+                warnings.warn("sigma_xy or sigma_z was not found in loaded parameters, they will be recomputed, "\
+                              "which may overwrite some parameters if they differed from autocomputed values", 
+                               RuntimeWarning)
+                self._make_sigmas()
 
 
 
