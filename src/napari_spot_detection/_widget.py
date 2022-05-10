@@ -824,7 +824,7 @@ class SpotDetection(QWidget):
                 if 'filtered spots' in self.viewer.layers:
                     del self.viewer.layers['filtered spots']
                 self.viewer.add_points(self.centers[self.spot_select], name='filtered spots', blending='additive', size=3, face_color='b')
-            
+
 
     def _save_parameters(self):
         detection_parameters = {
@@ -870,6 +870,23 @@ class SpotDetection(QWidget):
             with open(path_save, "w") as write_file:
                 json.dump(detection_parameters, write_file, indent=4)
 
+            
+    def _make_range(self, val, coef=1.5):
+        """
+        Compute a range of values around a given value, usefull
+        to update a Qt slider range before updating its main value.
+        """
+        if coef < 1:
+            coef = 1 / coef
+        if isinstance(val, str):
+            mini = float(val) / coef
+            maxi = float(val) * coef
+            return mini, maxi
+        else:
+            mini = float(val[0]) / coef
+            maxi = float(val[-1]) * coef
+            return mini, maxi
+    
 
     def _load_parameters(self):
 
@@ -898,19 +915,25 @@ class SpotDetection(QWidget):
             self.txt_min_roi_size_xy.setText(str(detection_parameters['txt_min_roi_size_xy']))
             self.chk_filter_amplitude_min.setChecked(detection_parameters['chk_filter_amplitude_min'])
             self.chk_filter_amplitude_max.setChecked(detection_parameters['chk_filter_amplitude_max'])
+            self.sld_filter_amplitude_range.setRange(*self._make_range(detection_parameters['sld_filter_amplitude_range']))
             self.sld_filter_amplitude_range.setValue(detection_parameters['sld_filter_amplitude_range'])
             self.chk_filter_sigma_xy_min.setChecked(detection_parameters['chk_filter_sigma_xy_min'])
             self.chk_filter_sigma_xy_max.setChecked(detection_parameters['chk_filter_sigma_xy_max'])
+            self.sld_filter_sigma_xy_range.setRange(*self._make_range(detection_parameters['sld_filter_sigma_xy_range']))
             self.sld_filter_sigma_xy_range.setValue(detection_parameters['sld_filter_sigma_xy_range'])
             self.chk_filter_sigma_z_min.setChecked(detection_parameters['chk_filter_sigma_z_min'])
             self.chk_filter_sigma_z_max.setChecked(detection_parameters['chk_filter_sigma_z_max'])
+            self.sld_filter_sigma_z_range.setRange(*self._make_range(detection_parameters['sld_filter_sigma_z_range']))
             self.sld_filter_sigma_z_range.setValue(detection_parameters['sld_filter_sigma_z_range'])
             self.chk_filter_sigma_ratio_min.setChecked(detection_parameters['chk_filter_sigma_ratio_min'])
             self.chk_filter_sigma_ratio_max.setChecked(detection_parameters['chk_filter_sigma_ratio_max'])
+            self.sld_filter_sigma_ratio_range.setRange(*self._make_range(detection_parameters['sld_filter_sigma_ratio_range']))
             self.sld_filter_sigma_ratio_range.setValue(detection_parameters['sld_filter_sigma_ratio_range'])
             self.chk_filter_chi_squared.setChecked(detection_parameters['chk_filter_chi_squared'])
+            self.sld_filter_chi_squared.setRange(*self._make_range(detection_parameters['sld_filter_chi_squared']))
             self.sld_filter_chi_squared.setValue(detection_parameters['sld_filter_chi_squared'])
             self.chk_filter_dist_center.setChecked(detection_parameters['chk_filter_dist_center'])
+            self.sld_filter_dist_center.setRange(*self._make_range(detection_parameters['sld_filter_dist_center']))
             self.sld_filter_dist_center.setValue(detection_parameters['sld_filter_dist_center'])
             if 'sigma_z' in detection_parameters and 'sigma_xy' in detection_parameters:
                 self.sigma_z = detection_parameters['sigma_z']
