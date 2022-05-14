@@ -163,6 +163,11 @@ class SpotDetection(QWidget):
         self.but_plot_fitted_2D.clicked.connect(self._plot_fitted_params_2D)
 
         # spot filtering widgets
+        self.lab_filter_percentile = QLabel('Percentiles auto params (min / max)')
+        self.txt_filter_percentile_min = QLineEdit()
+        self.txt_filter_percentile_min.setText('0')
+        self.txt_filter_percentile_max = QLineEdit()
+        self.txt_filter_percentile_max.setText('100')
         self.lab_filter_amplitude_range = QLabel('Range amplitude')
         self.sld_filter_amplitude_range = QLabeledDoubleRangeSlider(Qt.Orientation.Horizontal)
         self.sld_filter_amplitude_range.setRange(1, 4)
@@ -273,6 +278,11 @@ class SpotDetection(QWidget):
         plotFittedLayout.addWidget(self.but_plot_fitted)
         plotFittedLayout.addWidget(self.but_plot_fitted_2D)
         fitLayout.addLayout(plotFittedLayout)
+        percentileLayout = QHBoxLayout()
+        percentileLayout.addWidget(self.lab_filter_percentile)
+        percentileLayout.addWidget(self.txt_filter_percentile_min)
+        percentileLayout.addWidget(self.txt_filter_percentile_max)
+        fitLayout.addLayout(percentileLayout)
 
         # layout for filtering gaussian spots
         filterLayout = QGridLayout()
@@ -408,8 +418,7 @@ class SpotDetection(QWidget):
 
             footprint = localize.get_max_filter_footprint(min_separations=min_separations, drs=(1,1,1))
             # array of size nz, ny, nx of True
-
-            maxis = ndi.maximum_filter(img_filtered, footprint=np.ones(min_separations))
+            
             self.centers_guess_inds, self.amps = localize.find_peak_candidates(img_filtered, footprint, threshold=blob_thresh, use_gpu_filter=False)
             if 'local maxis' not in self.viewer.layers:
                 self.viewer.add_points(self.centers_guess_inds, name='local maxis', blending='additive', size=3, face_color='r')
@@ -617,8 +626,8 @@ class SpotDetection(QWidget):
         self.sigma_ratios = self.sigmas_z / self.sigmas_xy
 
         # update range of filters
-        p_mini = 1
-        p_maxi = 99
+        p_mini = float(self.txt_filter_percentile_min.text())
+        p_maxi = float(self.txt_filter_percentile_max.text())
         if self.auto_params:
             self.sld_filter_amplitude_range.setRange(np.percentile(self.amplitudes, p_mini), np.percentile(self.amplitudes, p_maxi))
             self.sld_filter_sigma_xy_range.setRange(np.percentile(self.sigmas_xy, p_mini), np.percentile(self.sigmas_xy, p_maxi))
@@ -639,8 +648,8 @@ class SpotDetection(QWidget):
         appropriate threshold values for spot filtering.
         """
 
-        p_mini = 1
-        p_maxi = 99
+        p_mini = float(self.txt_filter_percentile_min.text())
+        p_maxi = float(self.txt_filter_percentile_max.text())
 
         plt.figure()
         plt.hist(self.amplitudes, bins='auto', range=self.sld_filter_amplitude_range.value())
@@ -677,8 +686,8 @@ class SpotDetection(QWidget):
         appropriate threshold values for spot filtering.
         """
 
-        p_mini = 1
-        p_maxi = 99
+        p_mini = float(self.txt_filter_percentile_min.text())
+        p_maxi = float(self.txt_filter_percentile_max.text())
 
         distrib = {
             'amplitudes': {'data': self.amplitudes, 
@@ -839,8 +848,8 @@ class SpotDetection(QWidget):
             'sld_sigma_xy_large': self.sld_sigma_xy_large.value,
             'sld_blob_thresh': self.sld_blob_thresh.value(),
             'peaks_merged': self.peaks_merged,
-            'txt_merge_peaks_xy': self.txt_merge_peaks_xy.text(),
-            'txt_merge_peaks_z': self.txt_merge_peaks_z.text(),
+            'txt_merge_peaks_xy': float(self.txt_merge_peaks_xy.text()),
+            'txt_merge_peaks_z': float(self.txt_merge_peaks_z.text()),
             'txt_roi_size_z': float(self.txt_roi_size_z.text()),
             'txt_roi_size_xy': float(self.txt_roi_size_xy.text()),
             'txt_min_roi_size_z': float(self.txt_min_roi_size_z.text()),
@@ -878,13 +887,13 @@ class SpotDetection(QWidget):
         """
         if coef < 1:
             coef = 1 / coef
-        if isinstance(val, str):
-            mini = float(val) / coef
-            maxi = float(val) * coef
-            return mini, maxi
-        else:
+        if isinstance(val, (list, tuple)):
             mini = float(val[0]) / coef
             maxi = float(val[-1]) * coef
+            return mini, maxi
+        else:
+            mini = float(val) / coef
+            maxi = float(val) * coef
             return mini, maxi
     
 
