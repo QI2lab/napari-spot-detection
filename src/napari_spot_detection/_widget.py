@@ -8,7 +8,21 @@ Replace code below according to your needs.
 """
 
 from qtpy.QtCore import Qt
-from qtpy.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QGridLayout, QPushButton, QSlider, QLabel, QLineEdit, QCheckBox, QFileDialog, QScrollArea
+from qtpy.QtWidgets import (
+    QWidget, 
+    QHBoxLayout, 
+    QVBoxLayout, 
+    QGridLayout, 
+    QGroupBox, 
+    QPushButton, 
+    QSlider, 
+    QLabel, 
+    QLineEdit, 
+    QCheckBox, 
+    QFileDialog, 
+    QScrollArea, 
+    QSizePolicy,
+)
 from superqt import QLabeledDoubleRangeSlider, QLabeledDoubleSlider
 import numpy as np
 import matplotlib.pyplot as plt
@@ -82,6 +96,58 @@ class SpotDetection(QWidget):
         self.viewer = napari_viewer
         # automatic adaptation of parameters when steps complete, False when loading parameters
         self.auto_params = True 
+        
+        self.setLayout(QVBoxLayout())
+        self.layout().setSpacing(0)
+        self.layout().setContentsMargins(10, 10, 10, 10)
+
+        # general scroll area
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.spot_wdg = self._create_gui()
+        self._scroll.setWidget(self.spot_wdg)
+        self.layout().addWidget(self._scroll)
+
+        
+    def _create_gui(self):
+        wdg = QWidget()
+        wdg_layout = QVBoxLayout()
+        wdg_layout.setSpacing(20)
+        wdg_layout.setContentsMargins(10, 10, 10, 10)
+        wdg.setLayout(wdg_layout)
+        
+        self.spot_size_groupBox = self._create_spot_size_groupBox()
+        wdg_layout.addWidget(self.spot_size_groupBox)
+        
+        self.deconv_groupBox = self._create_deconv_groupBox()
+        wdg_layout.addWidget(self.deconv_groupBox)
+        
+        self.adapthist_groupBox = self._create_adapthist_groupBox()
+        wdg_layout.addWidget(self.adapthist_groupBox)
+        
+        self.localmax_groupBox = self._create_localmax_groupBox()
+        wdg_layout.addWidget(self.localmax_groupBox)
+        
+        self.gaussianfit_groupBox = self._create_gaussianfit_groupBox()
+        wdg_layout.addWidget(self.gaussianfit_groupBox)
+        
+        self.filter_groupBox = self._create_filter_groupBox()
+        wdg_layout.addWidget(self.filter_groupBox)
+        
+        self.save_groupBox = self._create_save_groupBox()
+        wdg_layout.addWidget(self.save_groupBox)
+
+        return wdg
+    
+
+    def _create_spot_size_groupBox(self):
+        group = QGroupBox(title="Physical parameters")
+        group.setCheckable(False)
+        # group.setChecked(True)
+        group.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed))
+        group_layout = QVBoxLayout()
+        group.setLayout(group_layout)
 
         # expected spot size
         self.lab_na = QLabel('NA')
@@ -118,11 +184,65 @@ class SpotDetection(QWidget):
         # self.lab_spot_size_z = QLabel('Expected spot size z (px)')
         # self.txt_spot_size_z = QLineEdit()
         # self.txt_spot_size_z.setText('')
-        
+        self.but_make_psf = QPushButton()
+        self.but_make_psf.setText('make PSF')
+        self.but_make_psf.clicked.connect(self._make_psf)
+        self.but_load_psf = QPushButton()
+        self.but_load_psf.setText('load PSF')
+        self.but_load_psf.clicked.connect(self._load_psf)
+
+        # layout for spot size parametrization
+        spotsizeLayout_optics = QHBoxLayout()
+        spotsizeLayout_optics.addWidget(self.lab_na)
+        spotsizeLayout_optics.addWidget(self.txt_na)
+        spotsizeLayout_optics.addWidget(self.lab_ri)
+        spotsizeLayout_optics.addWidget(self.txt_ri)
+        spotsizeLayout_optics.addWidget(self.lab_lambda_em)
+        spotsizeLayout_optics.addWidget(self.txt_lambda_em)
+        spotsizeLayout_spacing = QHBoxLayout()
+        spotsizeLayout_spacing.addWidget(self.lab_dc)
+        spotsizeLayout_spacing.addWidget(self.txt_dc)
+        spotsizeLayout_spacing.addWidget(self.lab_dstage)
+        spotsizeLayout_spacing.addWidget(self.txt_dstage)
+        spotsizeLayout_skewed = QHBoxLayout()
+        spotsizeLayout_skewed.addWidget(self.lab_skewed)
+        spotsizeLayout_skewed.addWidget(self.chk_skewed)
+        spotsizeLayout_skewed.addWidget(self.lab_angle)
+        spotsizeLayout_skewed.addWidget(self.txt_angle)
+        spotsizeLayout_zxy_um = QHBoxLayout()
+        spotsizeLayout_zxy_um.addWidget(self.lab_spot_size_xy_um)
+        spotsizeLayout_zxy_um.addWidget(self.txt_spot_size_xy_um)
+        spotsizeLayout_zxy_um.addWidget(self.lab_spot_size_z_um)
+        spotsizeLayout_zxy_um.addWidget(self.txt_spot_size_z_um)
+        # spotsizeLayout_zxy = QHBoxLayout()  # not used yet
+        # spotsizeLayout_zxy.addWidget(self.lab_spot_size_xy)
+        # spotsizeLayout_zxy.addWidget(self.txt_spot_size_xy)
+        # spotsizeLayout_zxy.addWidget(self.lab_spot_size_z)
+        # spotsizeLayout_zxy.addWidget(self.txt_spot_size_z)
+        spotsizeLayout_psf = QHBoxLayout()
+        spotsizeLayout_psf.addWidget(self.but_make_psf)
+        spotsizeLayout_psf.addWidget(self.but_load_psf)
+        group_layout.addLayout(spotsizeLayout_optics)
+        group_layout.addLayout(spotsizeLayout_spacing)
+        group_layout.addLayout(spotsizeLayout_skewed)
+        group_layout.addLayout(spotsizeLayout_zxy_um)
+        # spotsizeLayout.addLayout(spotsizeLayout_zxy)
+        group_layout.addLayout(spotsizeLayout_psf)
+
+        return group
+    
+    def _create_deconv_groupBox(self):
+        group = QGroupBox(title="Deconvolve")
+        group.setCheckable(True)
+        group.setChecked(True)
+        group.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed))
+        group_layout = QVBoxLayout()
+        group.setLayout(group_layout)
+
         # Deconvolution parameters
-        self.lab_deconv = QLabel('Deconvolve')
-        self.chk_deconv = QCheckBox()
-        self.chk_deconv.setChecked(False)
+        # self.lab_deconv = QLabel('Deconvolve')
+        # self.chk_deconv = QCheckBox()
+        # self.chk_deconv.setChecked(False)
         self.lab_deconv_iter = QLabel('iterations')
         self.txt_deconv_iter = QLineEdit()
         self.txt_deconv_iter.setText('30')
@@ -130,10 +250,31 @@ class SpotDetection(QWidget):
         self.txt_deconv_tvtau = QLineEdit()
         self.txt_deconv_tvtau.setText('.0001')
 
+        # layout for deconvolution
+        deconvLayout = QHBoxLayout()
+        # deconvLayout.addWidget(self.lab_deconv)
+        # deconvLayout.addWidget(self.chk_deconv)
+        deconvLayout.addWidget(self.lab_deconv_iter)
+        deconvLayout.addWidget(self.txt_deconv_iter)
+        deconvLayout.addWidget(self.lab_deconv_tvtau)
+        deconvLayout.addWidget(self.txt_deconv_tvtau)
+        group_layout.addLayout(deconvLayout)
+
+        return group
+
+
+    def _create_adapthist_groupBox(self):
+        group = QGroupBox(title="Adaptive histogram")
+        group.setCheckable(True)
+        group.setChecked(False)
+        group.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed))
+        group_layout = QVBoxLayout()
+        group.setLayout(group_layout)
+
         # Adaptive histogram
-        self.lab_adapthist= QLabel('Adaptive histogram')
-        self.chk_adapthist = QCheckBox()
-        self.chk_adapthist.setChecked(False)
+        # self.lab_adapthist= QLabel('Adaptive histogram')
+        # self.chk_adapthist = QCheckBox()
+        # self.chk_adapthist.setChecked(False)
         self.lab_adapthist_x = QLabel('x')
         self.txt_adapthist_x = QLineEdit()
         self.txt_adapthist_x.setText('25')
@@ -143,6 +284,29 @@ class SpotDetection(QWidget):
         self.lab_adapthist_z = QLabel('z')
         self.txt_adapthist_z = QLineEdit()
         self.txt_adapthist_z.setText('25')
+
+        # layout for adaptive histogram
+        adapthistLayout = QHBoxLayout()
+        # adapthistLayout.addWidget(self.lab_adapthist)
+        # adapthistLayout.addWidget(self.chk_adapthist)
+        adapthistLayout.addWidget(self.lab_adapthist_x)
+        adapthistLayout.addWidget(self.txt_adapthist_x)
+        adapthistLayout.addWidget(self.lab_adapthist_y)
+        adapthistLayout.addWidget(self.txt_adapthist_y)
+        adapthistLayout.addWidget(self.lab_adapthist_z)
+        adapthistLayout.addWidget(self.txt_adapthist_z)
+        group_layout.addLayout(adapthistLayout)
+
+        return group
+
+
+    def _create_localmax_groupBox(self):
+        group = QGroupBox(title="Find local maxima")
+        group.setCheckable(False)
+        # group.setChecked(True)
+        group.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed))
+        group_layout = QVBoxLayout()
+        group.setLayout(group_layout)
 
         # Differential of Gaussian parameters 
         self.lab_sigma_ratio = QLabel('DoG sigma ratio big / small')
@@ -190,6 +354,49 @@ class SpotDetection(QWidget):
         self.but_merge_peaks.setText('Merge peaks')
         self.but_merge_peaks.clicked.connect(self._merge_peaks)
 
+        # layout for DoG filtering
+        dogLayout_sigmas = QHBoxLayout()
+        dogLayout_sigmas.addWidget(self.lab_sigma_ratio)
+        dogLayout_sigmas.addWidget(self.txt_sigma_ratio)
+        dogLayout_sigmas.addWidget(self.but_auto_sigmas)
+        group_layout.addWidget(self.sld_sigma_small_x_factor)
+        group_layout.addWidget(self.sld_sigma_small_y_factor)
+        group_layout.addWidget(self.sld_sigma_small_z_factor)
+        group_layout.addWidget(self.sld_sigma_large_x_factor)
+        group_layout.addWidget(self.sld_sigma_large_y_factor)
+        group_layout.addWidget(self.sld_sigma_large_z_factor)
+        group_layout.addLayout(dogLayout_sigmas)
+        group_layout.addWidget(self.but_dog)
+        dogThreshLayout = QHBoxLayout()
+        dogThreshLayout.addWidget(self.lab_dog_thresh)
+        dogThreshLayout.addWidget(self.sld_dog_thresh)
+        group_layout.addLayout(dogThreshLayout)
+        group_layout.addWidget(self.but_find_peaks)
+        mergePeaksLayout = QHBoxLayout()
+        mergePeaksLayout.addWidget(self.lab_merge_peaks)
+        mergePeaksLayout.addWidget(self.chk_merge_peaks)
+        mergePeaksXYfactorLayout = QHBoxLayout()
+        mergePeaksXYfactorLayout.addWidget(self.lab_min_spot_xy_factor)
+        mergePeaksXYfactorLayout.addWidget(self.sld_min_spot_xy_factor)
+        mergePeaksZfactorLayout = QHBoxLayout()
+        mergePeaksZfactorLayout.addWidget(self.lab_min_spot_z_factor)
+        mergePeaksZfactorLayout.addWidget(self.sld_min_spot_z_factor)
+        group_layout.addLayout(mergePeaksLayout)
+        group_layout.addLayout(mergePeaksXYfactorLayout)
+        group_layout.addLayout(mergePeaksZfactorLayout)
+        group_layout.addWidget(self.but_merge_peaks)
+
+        return group
+
+
+    def _create_gaussianfit_groupBox(self):
+        group = QGroupBox(title="Gaussian fit")
+        group.setCheckable(False)
+        # group.setChecked(True)
+        group.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed))
+        group_layout = QVBoxLayout()
+        group.setLayout(group_layout)
+
         # gaussian fitting widgets
         self.lab_n_spots_to_fit= QLabel('n spots to fit')
         self.txt_n_spots_to_fit= QLineEdit()
@@ -210,6 +417,12 @@ class SpotDetection(QWidget):
         self.but_fit.setText('Fit spots')
         self.but_fit.clicked.connect(self._fit_spots)
 
+        self.lab_filter_percentile = QLabel('Percentiles auto params (min / max)')
+        self.txt_filter_percentile_min = QLineEdit()
+        self.txt_filter_percentile_min.setText('0')
+        self.txt_filter_percentile_max = QLineEdit()
+        self.txt_filter_percentile_max.setText('100')
+
         self.but_plot_fitted = QPushButton()
         self.but_plot_fitted.setText('Plot fitted parameters')
         self.but_plot_fitted.clicked.connect(self._plot_fitted_params)
@@ -217,12 +430,41 @@ class SpotDetection(QWidget):
         self.but_plot_fitted_2D.setText('Plot 2D distributions')
         self.but_plot_fitted_2D.clicked.connect(self._plot_fitted_params_2D)
 
+        # layout for fitting gaussian spots
+        nspotsLayout = QHBoxLayout()
+        nspotsLayout.addWidget(self.lab_n_spots_to_fit)
+        nspotsLayout.addWidget(self.txt_n_spots_to_fit)
+        group_layout.addLayout(nspotsLayout)
+        roisizesLayout = QHBoxLayout()
+        roisizesLayout.addWidget(self.lab_roi_sizes)
+        roisizesLayout.addWidget(self.txt_roi_z_factor)
+        roisizesLayout.addWidget(self.txt_roi_y_factor)
+        roisizesLayout.addWidget(self.txt_roi_x_factor)
+        group_layout.addLayout(roisizesLayout)
+        group_layout.addWidget(self.but_auto_roi)
+        group_layout.addWidget(self.but_fit)
+        plotFittedLayout = QHBoxLayout()
+        plotFittedLayout.addWidget(self.but_plot_fitted)
+        plotFittedLayout.addWidget(self.but_plot_fitted_2D)
+        group_layout.addLayout(plotFittedLayout)
+        percentileLayout = QHBoxLayout()
+        percentileLayout.addWidget(self.lab_filter_percentile)
+        percentileLayout.addWidget(self.txt_filter_percentile_min)
+        percentileLayout.addWidget(self.txt_filter_percentile_max)
+        group_layout.addLayout(percentileLayout)
+
+        return group
+
+
+    def _create_filter_groupBox(self):
+        group = QGroupBox(title="Spot filtering")
+        group.setCheckable(False)
+        # group.setChecked(True)
+        group.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed))
+        group_layout = QVBoxLayout()
+        group.setLayout(group_layout)
+
         # spot filtering widgets
-        self.lab_filter_percentile = QLabel('Percentiles auto params (min / max)')
-        self.txt_filter_percentile_min = QLineEdit()
-        self.txt_filter_percentile_min.setText('0')
-        self.txt_filter_percentile_max = QLineEdit()
-        self.txt_filter_percentile_max.setText('100')
         self.lab_filter_amplitude_range = QLabel('Range amplitude')
         self.sld_filter_amplitude_range = QLabeledDoubleRangeSlider(Qt.Orientation.Horizontal)
         self.sld_filter_amplitude_range.setRange(1, 4)
@@ -290,136 +532,6 @@ class SpotDetection(QWidget):
         self.but_filter.setText('Filter spots')
         self.but_filter.clicked.connect(self._filter_spots)
 
-        self.but_save_spots = QPushButton()
-        self.but_save_spots.setText('Save spots')
-        self.but_save_spots.clicked.connect(self._save_spots)
-        self.but_load_spots = QPushButton()
-        self.but_load_spots.setText('Load spots')
-        self.but_load_spots.clicked.connect(self._load_spots)
-        self.but_save_parameters = QPushButton()
-        self.but_save_parameters.setText('Save detection parameters')
-        self.but_save_parameters.clicked.connect(self._save_parameters)
-        self.but_load_parameters = QPushButton()
-        self.but_load_parameters.setText('Load detection parameters')
-        self.but_load_parameters.clicked.connect(self._load_parameters)
-
-
-        # general layout of the widget
-        outerLayout = QVBoxLayout()
-        # layout for spot size parametrization
-        spotsizeLayout = QVBoxLayout()
-        spotsizeLayout_optics = QHBoxLayout()
-        spotsizeLayout_optics.addWidget(self.lab_na)
-        spotsizeLayout_optics.addWidget(self.txt_na)
-        spotsizeLayout_optics.addWidget(self.lab_ri)
-        spotsizeLayout_optics.addWidget(self.txt_ri)
-        spotsizeLayout_optics.addWidget(self.lab_lambda_em)
-        spotsizeLayout_optics.addWidget(self.txt_lambda_em)
-        # spotsizeLayout_dc = QHBoxLayout()
-        spotsizeLayout_spacing = QHBoxLayout()
-        spotsizeLayout_spacing.addWidget(self.lab_dc)
-        spotsizeLayout_spacing.addWidget(self.txt_dc)
-        # spotsizeLayout_dstage = QHBoxLayout()
-        spotsizeLayout_spacing.addWidget(self.lab_dstage)
-        spotsizeLayout_spacing.addWidget(self.txt_dstage)
-        spotsizeLayout_skewed = QHBoxLayout()
-        spotsizeLayout_skewed.addWidget(self.lab_skewed)
-        spotsizeLayout_skewed.addWidget(self.chk_skewed)
-        spotsizeLayout_skewed.addWidget(self.lab_angle)
-        spotsizeLayout_skewed.addWidget(self.txt_angle)
-        spotsizeLayout_zxy_um = QHBoxLayout()
-        spotsizeLayout_zxy_um.addWidget(self.lab_spot_size_xy_um)
-        spotsizeLayout_zxy_um.addWidget(self.txt_spot_size_xy_um)
-        spotsizeLayout_zxy_um.addWidget(self.lab_spot_size_z_um)
-        spotsizeLayout_zxy_um.addWidget(self.txt_spot_size_z_um)
-        # spotsizeLayout_zxy = QHBoxLayout()
-        # spotsizeLayout_zxy.addWidget(self.lab_spot_size_xy)
-        # spotsizeLayout_zxy.addWidget(self.txt_spot_size_xy)
-        # spotsizeLayout_zxy.addWidget(self.lab_spot_size_z)
-        # spotsizeLayout_zxy.addWidget(self.txt_spot_size_z)
-        spotsizeLayout.addLayout(spotsizeLayout_optics)
-        spotsizeLayout.addLayout(spotsizeLayout_spacing)
-        spotsizeLayout.addLayout(spotsizeLayout_skewed)
-        spotsizeLayout.addLayout(spotsizeLayout_zxy_um)
-        # spotsizeLayout.addLayout(spotsizeLayout_zxy)
-
-        # layout for deconvolution
-        deconvLayout = QHBoxLayout()
-        deconvLayout.addWidget(self.lab_deconv)
-        deconvLayout.addWidget(self.chk_deconv)
-        deconvLayout.addWidget(self.lab_deconv_iter)
-        deconvLayout.addWidget(self.txt_deconv_iter)
-        deconvLayout.addWidget(self.lab_deconv_tvtau)
-        deconvLayout.addWidget(self.txt_deconv_tvtau)
-
-        # layout for adaptive histogram
-        adapthistLayout = QHBoxLayout()
-        adapthistLayout.addWidget(self.lab_adapthist)
-        adapthistLayout.addWidget(self.chk_adapthist)
-        adapthistLayout.addWidget(self.lab_adapthist_x)
-        adapthistLayout.addWidget(self.txt_adapthist_x)
-        adapthistLayout.addWidget(self.lab_adapthist_y)
-        adapthistLayout.addWidget(self.txt_adapthist_y)
-        adapthistLayout.addWidget(self.lab_adapthist_z)
-        adapthistLayout.addWidget(self.txt_adapthist_z)
-
-        # layout for DoG filtering
-        dogLayout = QVBoxLayout()
-        dogLayout_sigmas = QHBoxLayout()
-        dogLayout_sigmas.addWidget(self.lab_sigma_ratio)
-        dogLayout_sigmas.addWidget(self.txt_sigma_ratio)
-        dogLayout_sigmas.addWidget(self.but_auto_sigmas)
-        dogLayout.addWidget(self.sld_sigma_small_x_factor)
-        dogLayout.addWidget(self.sld_sigma_small_y_factor)
-        dogLayout.addWidget(self.sld_sigma_small_z_factor)
-        dogLayout.addWidget(self.sld_sigma_large_x_factor)
-        dogLayout.addWidget(self.sld_sigma_large_y_factor)
-        dogLayout.addWidget(self.sld_sigma_large_z_factor)
-        dogLayout.addLayout(dogLayout_sigmas)
-        dogLayout.addWidget(self.but_dog)
-        dogThreshLayout = QHBoxLayout()
-        dogThreshLayout.addWidget(self.lab_dog_thresh)
-        dogThreshLayout.addWidget(self.sld_dog_thresh)
-        dogLayout.addLayout(dogThreshLayout)
-        dogLayout.addWidget(self.but_find_peaks)
-        mergePeaksLayout = QHBoxLayout()
-        mergePeaksLayout.addWidget(self.lab_merge_peaks)
-        mergePeaksLayout.addWidget(self.chk_merge_peaks)
-        mergePeaksXYfactorLayout = QHBoxLayout()
-        mergePeaksXYfactorLayout.addWidget(self.lab_min_spot_xy_factor)
-        mergePeaksXYfactorLayout.addWidget(self.sld_min_spot_xy_factor)
-        mergePeaksZfactorLayout = QHBoxLayout()
-        mergePeaksZfactorLayout.addWidget(self.lab_min_spot_z_factor)
-        mergePeaksZfactorLayout.addWidget(self.sld_min_spot_z_factor)
-        dogLayout.addLayout(mergePeaksLayout)
-        dogLayout.addLayout(mergePeaksXYfactorLayout)
-        dogLayout.addLayout(mergePeaksZfactorLayout)
-        dogLayout.addWidget(self.but_merge_peaks)
-
-        # layout for fitting gaussian spots
-        fitLayout = QVBoxLayout()
-        nspotsLayout = QHBoxLayout()
-        nspotsLayout.addWidget(self.lab_n_spots_to_fit)
-        nspotsLayout.addWidget(self.txt_n_spots_to_fit)
-        fitLayout.addLayout(nspotsLayout)
-        roisizesLayout = QHBoxLayout()
-        roisizesLayout.addWidget(self.lab_roi_sizes)
-        roisizesLayout.addWidget(self.txt_roi_z_factor)
-        roisizesLayout.addWidget(self.txt_roi_y_factor)
-        roisizesLayout.addWidget(self.txt_roi_x_factor)
-        fitLayout.addLayout(roisizesLayout)
-        fitLayout.addWidget(self.but_auto_roi)
-        fitLayout.addWidget(self.but_fit)
-        plotFittedLayout = QHBoxLayout()
-        plotFittedLayout.addWidget(self.but_plot_fitted)
-        plotFittedLayout.addWidget(self.but_plot_fitted_2D)
-        fitLayout.addLayout(plotFittedLayout)
-        percentileLayout = QHBoxLayout()
-        percentileLayout.addWidget(self.lab_filter_percentile)
-        percentileLayout.addWidget(self.txt_filter_percentile_min)
-        percentileLayout.addWidget(self.txt_filter_percentile_max)
-        fitLayout.addLayout(percentileLayout)
-
         # layout for filtering gaussian spots
         filterLayout = QGridLayout()
         # amplitudes
@@ -479,6 +591,31 @@ class SpotDetection(QWidget):
         filterLayout.addWidget(self.sld_filter_chi_squared, 10, 1)
         filterLayout.addWidget(self.chk_filter_chi_squared, 10, 2)
         filterLayout.addWidget(self.but_filter, 11, 1)
+        group_layout.addLayout(filterLayout)
+
+        return group
+
+
+    def _create_save_groupBox(self):
+        group = QGroupBox(title="Save / load")
+        group.setCheckable(False)
+        # group.setChecked(True)
+        group.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed))
+        group_layout = QVBoxLayout()
+        group.setLayout(group_layout)
+
+        self.but_save_spots = QPushButton()
+        self.but_save_spots.setText('Save spots')
+        self.but_save_spots.clicked.connect(self._save_spots)
+        self.but_load_spots = QPushButton()
+        self.but_load_spots.setText('Load spots')
+        self.but_load_spots.clicked.connect(self._load_spots)
+        self.but_save_parameters = QPushButton()
+        self.but_save_parameters.setText('Save detection parameters')
+        self.but_save_parameters.clicked.connect(self._save_parameters)
+        self.but_load_parameters = QPushButton()
+        self.but_load_parameters.setText('Load detection parameters')
+        self.but_load_parameters.clicked.connect(self._load_parameters)
 
         # layout for saving and loading spots data and detection parameters
         saveloadLayout = QGridLayout()
@@ -486,24 +623,18 @@ class SpotDetection(QWidget):
         saveloadLayout.addWidget(self.but_load_spots, 0, 1)
         saveloadLayout.addWidget(self.but_save_parameters, 1, 0)
         saveloadLayout.addWidget(self.but_load_parameters, 1, 1)
+        group_layout.addLayout(saveloadLayout)
 
-        outerLayout.addLayout(spotsizeLayout)
-        outerLayout.addLayout(dogLayout)
-        outerLayout.addLayout(fitLayout)
-        outerLayout.addLayout(filterLayout)
-        outerLayout.addLayout(saveloadLayout)
-
-
-        self.setLayout(outerLayout)
-        # general scroll area
-        self._scroll = QScrollArea()
-        self._scroll.setWidgetResizable(True)
-        self._scroll.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.layout().addWidget(self._scroll)
-        # # outerLayout.addWidget(self._scroll)
+        return group
 
         # self._make_sigmas_factors()
 
+
+    def _make_psf(self):
+        pass
+
+    def _load_psf(self):
+        pass
 
     def _make_sigmas_factors(self):
         """
