@@ -8,9 +8,8 @@ Replace code below according to your needs.
 """
 
 from qtpy.QtCore import Qt
-from qtpy.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QGridLayout, QPushButton, QSlider, QLabel, QLineEdit, QCheckBox, QFileDialog
+from qtpy.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QGridLayout, QPushButton, QSlider, QLabel, QLineEdit, QCheckBox, QFileDialog, QScrollArea
 from superqt import QLabeledDoubleRangeSlider, QLabeledDoubleSlider
-# from magicgui import magic_factory, magicgui
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -18,20 +17,14 @@ import itertools
 import json
 import warnings
 import napari
-import scipy.signal
-import scipy.ndimage as ndi
-from scipy.ndimage import gaussian_filter
-
-import localize_psf.rois as roi_fns
-from localize_psf import fit
-import localize_psf.fit_psf as psf
-from localize_psf import localize
-
 from pathlib import Path
 import sys
-path_root = Path(__file__).parents[1]
-sys.path.append(str(path_root))
-from napari_spot_detection import _image_processing as ip
+
+if '../opm-merfish-analysis/src/' not in sys.path:
+    sys.path.append('../opm-merfish-analysis/src/')
+from SPOTS3D import SPOTS3D
+from _imageprocessing import deskew
+
 
 
 class FullSlider(QWidget):
@@ -91,61 +84,123 @@ class SpotDetection(QWidget):
         self.auto_params = True 
 
         # expected spot size
-        self.lab_spot_size_xy = QLabel('Expected spot size xy (px)')
-        self.txt_spot_size_xy = QLineEdit()
-        self.txt_spot_size_xy.setText('5')
-        self.lab_spot_size_z = QLabel('Expected spot size z (px)')
-        self.txt_spot_size_z = QLineEdit()
-        self.txt_spot_size_z.setText('5')
+        self.lab_na = QLabel('NA')
+        self.txt_na = QLineEdit()
+        self.txt_na.setText('1.35')
+        self.lab_ri = QLabel('RI')
+        self.txt_ri = QLineEdit()
+        self.txt_ri.setText('1.4')
+        self.lab_lambda_em = QLabel('emission wavelenth (nm)')
+        self.txt_lambda_em = QLineEdit()
+        self.txt_lambda_em.setText('680')
+        self.lab_dc = QLabel('pixel size (µm)')
+        self.txt_dc = QLineEdit()
+        self.txt_dc.setText('0.065')
+        self.lab_dstage = QLabel('frames spacing (µm)')
+        self.txt_dstage = QLineEdit()
+        self.txt_dstage.setText('0.25')
+        self.lab_skewed = QLabel('skewed data')
+        self.chk_skewed = QCheckBox()
+        self.chk_skewed.setChecked(False)
+        self.lab_angle = QLabel('angle (°)')
+        self.txt_angle = QLineEdit()
+        self.txt_angle.setText('30')
+        self.lab_spot_size_xy_um = QLabel('Expected spot size xy (µm)')
+        self.txt_spot_size_xy_um = QLineEdit()
+        self.txt_spot_size_xy_um.setText('')
+        self.lab_spot_size_z_um = QLabel('Expected spot size z (µm)')
+        self.txt_spot_size_z_um = QLineEdit()
+        self.txt_spot_size_z_um.setText('')
+        # in the future, allow user to define spot parameters from pixel size
+        # self.lab_spot_size_xy = QLabel('Expected spot size xy (px)')
+        # self.txt_spot_size_xy = QLineEdit()
+        # self.txt_spot_size_xy.setText('')
+        # self.lab_spot_size_z = QLabel('Expected spot size z (px)')
+        # self.txt_spot_size_z = QLineEdit()
+        # self.txt_spot_size_z.setText('')
+        
+        # Deconvolution parameters
+        self.lab_deconv = QLabel('Deconvolve')
+        self.chk_deconv = QCheckBox()
+        self.chk_deconv.setChecked(False)
+        self.lab_deconv_iter = QLabel('iterations')
+        self.txt_deconv_iter = QLineEdit()
+        self.txt_deconv_iter.setText('30')
+        self.lab_deconv_tvtau = QLabel('TV tau')
+        self.txt_deconv_tvtau = QLineEdit()
+        self.txt_deconv_tvtau.setText('.0001')
+
+        # Adaptive histogram
+        self.lab_adapthist= QLabel('Adaptive histogram')
+        self.chk_adapthist = QCheckBox()
+        self.chk_adapthist.setChecked(False)
+        self.lab_adapthist_x = QLabel('x')
+        self.txt_adapthist_x = QLineEdit()
+        self.txt_adapthist_x.setText('25')
+        self.lab_adapthist_y = QLabel('y')
+        self.txt_adapthist_y = QLineEdit()
+        self.txt_adapthist_y.setText('25')
+        self.lab_adapthist_z = QLabel('z')
+        self.txt_adapthist_z = QLineEdit()
+        self.txt_adapthist_z.setText('25')
+
+        # Differential of Gaussian parameters 
         self.lab_sigma_ratio = QLabel('DoG sigma ratio big / small')
         self.txt_sigma_ratio = QLineEdit()
         self.txt_sigma_ratio.setText('1.6')
         self.but_auto_sigmas = QPushButton()
         self.but_auto_sigmas.setText('Auto sigmas')
-        self.but_auto_sigmas.clicked.connect(self._make_sigmas)
-
+        self.but_auto_sigmas.clicked.connect(self._make_sigmas_factors)
         # DoG blob detection widgets
-        self.sld_sigma_xy_small = FullSlider(range=(0.1, 20), step=0.1, label="sigma xy small")
-        self.sld_sigma_xy_large = FullSlider(range=(0.1, 20), step=0.1, label="sigma xy large")
-        self.sld_sigma_z_small = FullSlider(range=(0.1, 20), step=0.1, label="sigma z small")
-        self.sld_sigma_z_large = FullSlider(range=(0.1, 20), step=0.1, label="sigma z large")
+        self.sld_sigma_small_x_factor = FullSlider(range=(0.1, 20), step=0.1, label="sigma small x factor")
+        self.sld_sigma_small_y_factor = FullSlider(range=(0.1, 20), step=0.1, label="sigma small y factor")
+        self.sld_sigma_small_z_factor = FullSlider(range=(0.1, 20), step=0.1, label="sigma small z factor")
+        self.sld_sigma_large_x_factor = FullSlider(range=(0.1, 20), step=0.1, label="sigma large x factor")
+        self.sld_sigma_large_y_factor = FullSlider(range=(0.1, 20), step=0.1, label="sigma large y factor")
+        self.sld_sigma_large_z_factor = FullSlider(range=(0.1, 20), step=0.1, label="sigma large z factor")
 
-        # self.sld_blob_thresh = FullSlider(range=(0.1, 20), step=0.1, label="Blob threshold")
-        self.lab_blob_thresh = QLabel('Blob threshold')
-        self.sld_blob_thresh = QLabeledDoubleSlider(Qt.Orientation.Horizontal)
-        self.sld_blob_thresh.setRange(0, 50)
-        self.sld_blob_thresh.setValue(10)
-        # self.sld_blob_thresh.setBarIsRigid(False) not implemented for QLabeledDoubleSlider :'(
+        # self.sld_dog_thresh = FullSlider(range=(0.1, 20), step=0.1, label="Blob threshold")
+        self.lab_dog_thresh = QLabel('DoG threshold')
+        self.sld_dog_thresh = QLabeledDoubleSlider(Qt.Orientation.Horizontal)
+        self.sld_dog_thresh.setRange(0, 1000)
+        self.sld_dog_thresh.setValue(100)
+        # self.sld_dog_thresh.setBarIsRigid(False) not implemented for QLabeledDoubleSlider :'(
 
         self.but_dog = QPushButton()
         self.but_dog.setText('Apply DoG')
         self.but_dog.clicked.connect(self._compute_dog)
 
+        # Merge local maxima
+        self.lab_merge_peaks= QLabel('Merge peaks')
+        self.chk_merge_peaks = QCheckBox()
+        self.chk_merge_peaks.setChecked(False)
+        self.lab_min_spot_xy_factor = QLabel('min spot xy factor')
+        self.sld_min_spot_xy_factor = QLabeledDoubleSlider(Qt.Orientation.Horizontal)
+        self.sld_min_spot_xy_factor.setRange(0, 10)
+        self.sld_min_spot_xy_factor.setValue(5)
+        self.lab_min_spot_z_factor = QLabel('min spot x factor')
+        self.sld_min_spot_z_factor = QLabeledDoubleSlider(Qt.Orientation.Horizontal)
+        self.sld_min_spot_z_factor.setRange(0, 10)
+        self.sld_min_spot_z_factor.setValue(5)
         self.but_find_peaks = QPushButton()
         self.but_find_peaks.setText('Find peaks')
         self.but_find_peaks.clicked.connect(self._find_peaks)
 
-        self.lab_merge_peaks = QLabel('Merge peaks distances (xy, z)')
-        self.txt_merge_peaks_xy = QLineEdit()
-        self.txt_merge_peaks_xy.setText('5')
-        self.txt_merge_peaks_z = QLineEdit()
-        self.txt_merge_peaks_z.setText('5')
         self.but_merge_peaks = QPushButton()
         self.but_merge_peaks.setText('Merge peaks')
         self.but_merge_peaks.clicked.connect(self._merge_peaks)
 
         # gaussian fitting widgets
-        self.lab_roi_sizes = QLabel('Fit ROI sizes (xy, z)')
-        self.txt_roi_size_xy = QLineEdit()
-        self.txt_roi_size_xy.setText('10')
-        self.txt_roi_size_z = QLineEdit()
-        self.txt_roi_size_z.setText('10')
-        
-        self.lab_min_roi_sizes = QLabel('Minimum ROI sizes (xy, z)')
-        self.txt_min_roi_size_xy = QLineEdit()
-        self.txt_min_roi_size_xy.setText('5')
-        self.txt_min_roi_size_z = QLineEdit()
-        self.txt_min_roi_size_z.setText('5')
+        self.lab_n_spots_to_fit= QLabel('n spots to fit')
+        self.txt_n_spots_to_fit= QLineEdit()
+        self.txt_n_spots_to_fit.setText('250000')
+        self.lab_roi_sizes = QLabel('Fit ROI size factors (z / y / x)')
+        self.txt_roi_z_factor= QLineEdit()
+        self.txt_roi_z_factor.setText('8')
+        self.txt_roi_y_factor = QLineEdit()
+        self.txt_roi_y_factor.setText('14')
+        self.txt_roi_x_factor = QLineEdit()
+        self.txt_roi_x_factor.setText('14')
 
         self.but_auto_roi = QPushButton()
         self.but_auto_roi.setText('Auto ROI sizes')
@@ -176,36 +231,61 @@ class SpotDetection(QWidget):
         self.chk_filter_amplitude_min = QCheckBox()
         self.chk_filter_amplitude_max = QCheckBox()
         self.lab_filter_sigma_xy_range = QLabel('Range sigma x/y')
-        self.sld_filter_sigma_xy_range = QLabeledDoubleRangeSlider(Qt.Orientation.Horizontal)
-        self.sld_filter_sigma_xy_range.setRange(1, 4)
-        self.sld_filter_sigma_xy_range.setValue([2, 3])
-        self.sld_filter_sigma_xy_range.setBarIsRigid(False)
+        self.sld_filter_sigma_xy_factor = QLabeledDoubleRangeSlider(Qt.Orientation.Horizontal)
+        self.sld_filter_sigma_xy_factor.setRange(0, 20)
+        self.sld_filter_sigma_xy_factor.setValue([0.25, 8])
+        self.sld_filter_sigma_xy_factor.setBarIsRigid(False)
         self.chk_filter_sigma_xy_min = QCheckBox()
         self.chk_filter_sigma_xy_max = QCheckBox()
         self.lab_filter_sigma_z_range = QLabel('Range sigma z')
-        self.sld_filter_sigma_z_range = QLabeledDoubleRangeSlider(Qt.Orientation.Horizontal)
-        self.sld_filter_sigma_z_range.setRange(1, 4)
-        self.sld_filter_sigma_z_range.setValue([2, 3])
-        self.sld_filter_sigma_z_range.setBarIsRigid(False)
+        self.sld_filter_sigma_z_factor = QLabeledDoubleRangeSlider(Qt.Orientation.Horizontal)
+        self.sld_filter_sigma_z_factor.setRange(0, 20)
+        self.sld_filter_sigma_z_factor.setValue([0.2, 6])
+        self.sld_filter_sigma_z_factor.setBarIsRigid(False)
         self.chk_filter_sigma_z_min = QCheckBox()
         self.chk_filter_sigma_z_max = QCheckBox()
         self.lab_filter_sigma_ratio_range = QLabel('Range sigma ratio z/xy')
         self.sld_filter_sigma_ratio_range = QLabeledDoubleRangeSlider(Qt.Orientation.Horizontal)
-        self.sld_filter_sigma_ratio_range.setRange(1, 4)
-        self.sld_filter_sigma_ratio_range.setValue([2, 3])
+        self.sld_filter_sigma_ratio_range.setRange(0, 20)
+        self.sld_filter_sigma_ratio_range.setValue([2, 4])
         self.sld_filter_sigma_ratio_range.setBarIsRigid(False)
         self.chk_filter_sigma_ratio_min = QCheckBox()
         self.chk_filter_sigma_ratio_max = QCheckBox()
+        self.lab_fit_dist_max_err_z_factor = QLabel('fit_dist_max_err_z_factor')
+        self.sld_fit_dist_max_err_z_factor = QLabeledDoubleSlider(Qt.Orientation.Horizontal)
+        self.sld_fit_dist_max_err_z_factor.setRange(0, 20)
+        self.sld_fit_dist_max_err_z_factor.setValue(5)
+        self.chk_fit_dist_max_err_z_factor = QCheckBox()
+        self.lab_fit_dist_max_err_xy_factor = QLabel('fit_dist_max_err_xy_factor')
+        self.sld_fit_dist_max_err_xy_factor = QLabeledDoubleSlider(Qt.Orientation.Horizontal)
+        self.sld_fit_dist_max_err_xy_factor.setRange(0, 20)
+        self.sld_fit_dist_max_err_xy_factor.setValue(7)
+        self.chk_fit_dist_max_err_xy_factor = QCheckBox()
+        self.lab_min_spot_sep_z_factor = QLabel('min_spot_sep_z_factor')
+        self.sld_min_spot_sep_z_factor = QLabeledDoubleSlider(Qt.Orientation.Horizontal)
+        self.sld_min_spot_sep_z_factor.setRange(0, 5)
+        self.sld_min_spot_sep_z_factor.setValue(2)
+        self.chk_min_spot_sep_z_factor = QCheckBox()
+        self.lab_min_spot_sep_xy_factor = QLabel('min_spot_sep_xy_factor')
+        self.sld_min_spot_sep_xy_factor = QLabeledDoubleSlider(Qt.Orientation.Horizontal)
+        self.sld_min_spot_sep_xy_factor.setRange(0, 5)
+        self.sld_min_spot_sep_xy_factor.setValue(1)
+        self.chk_min_spot_sep_xy_factor = QCheckBox()
+        self.lab_dist_boundary_z_factor = QLabel('dist_boundary_z_factor')
+        self.sld_dist_boundary_z_factor = QLabeledDoubleSlider(Qt.Orientation.Horizontal)
+        self.sld_dist_boundary_z_factor.setRange(0, 0.5)
+        self.sld_dist_boundary_z_factor.setValue(0.05)
+        self.chk_dist_boundary_z_factor = QCheckBox()
+        self.lab_dist_boundary_xy_factor = QLabel('dist_boundary_xy_factor')
+        self.sld_dist_boundary_xy_factor = QLabeledDoubleSlider(Qt.Orientation.Horizontal)
+        self.sld_dist_boundary_xy_factor.setRange(0, 0.5)
+        self.sld_dist_boundary_xy_factor.setValue(0.05)
+        self.chk_dist_boundary_xy_factor= QCheckBox()
         self.lab_filter_chi_squared = QLabel('min chi squared')
         self.sld_filter_chi_squared = QLabeledDoubleSlider(Qt.Orientation.Horizontal)
         self.sld_filter_chi_squared.setRange(1, 3)
         self.sld_filter_chi_squared.setValue(2)
         self.chk_filter_chi_squared = QCheckBox()
-        self.lab_filter_dist_center = QLabel('distance to center')
-        self.sld_filter_dist_center = QLabeledDoubleSlider(Qt.Orientation.Horizontal)
-        self.sld_filter_dist_center.setRange(1, 3)
-        self.sld_filter_dist_center.setValue(2)
-        self.chk_filter_dist_center = QCheckBox()
         self.but_filter = QPushButton()
         self.but_filter.setText('Filter spots')
         self.but_filter.clicked.connect(self._filter_spots)
@@ -228,50 +308,106 @@ class SpotDetection(QWidget):
         outerLayout = QVBoxLayout()
         # layout for spot size parametrization
         spotsizeLayout = QVBoxLayout()
-        spotsizeLayout_xy = QHBoxLayout()
-        spotsizeLayout_xy.addWidget(self.lab_spot_size_xy)
-        spotsizeLayout_xy.addWidget(self.txt_spot_size_xy)
-        spotsizeLayout_z = QHBoxLayout()
-        spotsizeLayout_z.addWidget(self.lab_spot_size_z)
-        spotsizeLayout_z.addWidget(self.txt_spot_size_z)
-        spotsizeLayout_sigmas = QHBoxLayout()
-        spotsizeLayout_sigmas.addWidget(self.lab_sigma_ratio)
-        spotsizeLayout_sigmas.addWidget(self.txt_sigma_ratio)
-        spotsizeLayout_sigmas.addWidget(self.but_auto_sigmas)
-        spotsizeLayout.addLayout(spotsizeLayout_xy)
-        spotsizeLayout.addLayout(spotsizeLayout_z)
-        spotsizeLayout.addLayout(spotsizeLayout_sigmas)
+        spotsizeLayout_optics = QHBoxLayout()
+        spotsizeLayout_optics.addWidget(self.lab_na)
+        spotsizeLayout_optics.addWidget(self.txt_na)
+        spotsizeLayout_optics.addWidget(self.lab_ri)
+        spotsizeLayout_optics.addWidget(self.txt_ri)
+        spotsizeLayout_optics.addWidget(self.lab_lambda_em)
+        spotsizeLayout_optics.addWidget(self.txt_lambda_em)
+        # spotsizeLayout_dc = QHBoxLayout()
+        spotsizeLayout_spacing = QHBoxLayout()
+        spotsizeLayout_spacing.addWidget(self.lab_dc)
+        spotsizeLayout_spacing.addWidget(self.txt_dc)
+        # spotsizeLayout_dstage = QHBoxLayout()
+        spotsizeLayout_spacing.addWidget(self.lab_dstage)
+        spotsizeLayout_spacing.addWidget(self.txt_dstage)
+        spotsizeLayout_skewed = QHBoxLayout()
+        spotsizeLayout_skewed.addWidget(self.lab_skewed)
+        spotsizeLayout_skewed.addWidget(self.chk_skewed)
+        spotsizeLayout_skewed.addWidget(self.lab_angle)
+        spotsizeLayout_skewed.addWidget(self.txt_angle)
+        spotsizeLayout_zxy_um = QHBoxLayout()
+        spotsizeLayout_zxy_um.addWidget(self.lab_spot_size_xy_um)
+        spotsizeLayout_zxy_um.addWidget(self.txt_spot_size_xy_um)
+        spotsizeLayout_zxy_um.addWidget(self.lab_spot_size_z_um)
+        spotsizeLayout_zxy_um.addWidget(self.txt_spot_size_z_um)
+        # spotsizeLayout_zxy = QHBoxLayout()
+        # spotsizeLayout_zxy.addWidget(self.lab_spot_size_xy)
+        # spotsizeLayout_zxy.addWidget(self.txt_spot_size_xy)
+        # spotsizeLayout_zxy.addWidget(self.lab_spot_size_z)
+        # spotsizeLayout_zxy.addWidget(self.txt_spot_size_z)
+        spotsizeLayout.addLayout(spotsizeLayout_optics)
+        spotsizeLayout.addLayout(spotsizeLayout_spacing)
+        spotsizeLayout.addLayout(spotsizeLayout_skewed)
+        spotsizeLayout.addLayout(spotsizeLayout_zxy_um)
+        # spotsizeLayout.addLayout(spotsizeLayout_zxy)
+
+        # layout for deconvolution
+        deconvLayout = QHBoxLayout()
+        deconvLayout.addWidget(self.lab_deconv)
+        deconvLayout.addWidget(self.chk_deconv)
+        deconvLayout.addWidget(self.lab_deconv_iter)
+        deconvLayout.addWidget(self.txt_deconv_iter)
+        deconvLayout.addWidget(self.lab_deconv_tvtau)
+        deconvLayout.addWidget(self.txt_deconv_tvtau)
+
+        # layout for adaptive histogram
+        adapthistLayout = QHBoxLayout()
+        adapthistLayout.addWidget(self.lab_adapthist)
+        adapthistLayout.addWidget(self.chk_adapthist)
+        adapthistLayout.addWidget(self.lab_adapthist_x)
+        adapthistLayout.addWidget(self.txt_adapthist_x)
+        adapthistLayout.addWidget(self.lab_adapthist_y)
+        adapthistLayout.addWidget(self.txt_adapthist_y)
+        adapthistLayout.addWidget(self.lab_adapthist_z)
+        adapthistLayout.addWidget(self.txt_adapthist_z)
 
         # layout for DoG filtering
         dogLayout = QVBoxLayout()
-        dogLayout.addWidget(self.sld_sigma_xy_small)
-        dogLayout.addWidget(self.sld_sigma_xy_large)
-        dogLayout.addWidget(self.sld_sigma_z_small)
-        dogLayout.addWidget(self.sld_sigma_z_large)
+        dogLayout_sigmas = QHBoxLayout()
+        dogLayout_sigmas.addWidget(self.lab_sigma_ratio)
+        dogLayout_sigmas.addWidget(self.txt_sigma_ratio)
+        dogLayout_sigmas.addWidget(self.but_auto_sigmas)
+        dogLayout.addWidget(self.sld_sigma_small_x_factor)
+        dogLayout.addWidget(self.sld_sigma_small_y_factor)
+        dogLayout.addWidget(self.sld_sigma_small_z_factor)
+        dogLayout.addWidget(self.sld_sigma_large_x_factor)
+        dogLayout.addWidget(self.sld_sigma_large_y_factor)
+        dogLayout.addWidget(self.sld_sigma_large_z_factor)
+        dogLayout.addLayout(dogLayout_sigmas)
         dogLayout.addWidget(self.but_dog)
-        blobThreshLayout = QHBoxLayout()
-        blobThreshLayout.addWidget(self.lab_blob_thresh)
-        blobThreshLayout.addWidget(self.sld_blob_thresh)
-        dogLayout.addLayout(blobThreshLayout)
+        dogThreshLayout = QHBoxLayout()
+        dogThreshLayout.addWidget(self.lab_dog_thresh)
+        dogThreshLayout.addWidget(self.sld_dog_thresh)
+        dogLayout.addLayout(dogThreshLayout)
         dogLayout.addWidget(self.but_find_peaks)
         mergePeaksLayout = QHBoxLayout()
         mergePeaksLayout.addWidget(self.lab_merge_peaks)
-        mergePeaksLayout.addWidget(self.txt_merge_peaks_xy)
-        mergePeaksLayout.addWidget(self.txt_merge_peaks_z)
+        mergePeaksLayout.addWidget(self.chk_merge_peaks)
+        mergePeaksXYfactorLayout = QHBoxLayout()
+        mergePeaksXYfactorLayout.addWidget(self.lab_min_spot_xy_factor)
+        mergePeaksXYfactorLayout.addWidget(self.sld_min_spot_xy_factor)
+        mergePeaksZfactorLayout = QHBoxLayout()
+        mergePeaksZfactorLayout.addWidget(self.lab_min_spot_z_factor)
+        mergePeaksZfactorLayout.addWidget(self.sld_min_spot_z_factor)
         dogLayout.addLayout(mergePeaksLayout)
+        dogLayout.addLayout(mergePeaksXYfactorLayout)
+        dogLayout.addLayout(mergePeaksZfactorLayout)
         dogLayout.addWidget(self.but_merge_peaks)
+
         # layout for fitting gaussian spots
         fitLayout = QVBoxLayout()
+        nspotsLayout = QHBoxLayout()
+        nspotsLayout.addWidget(self.lab_n_spots_to_fit)
+        nspotsLayout.addWidget(self.txt_n_spots_to_fit)
+        fitLayout.addLayout(nspotsLayout)
         roisizesLayout = QHBoxLayout()
         roisizesLayout.addWidget(self.lab_roi_sizes)
-        roisizesLayout.addWidget(self.txt_roi_size_xy)
-        roisizesLayout.addWidget(self.txt_roi_size_z)
-        minroisizesLayout = QHBoxLayout()
-        minroisizesLayout.addWidget(self.lab_min_roi_sizes)
-        minroisizesLayout.addWidget(self.txt_min_roi_size_xy)
-        minroisizesLayout.addWidget(self.txt_min_roi_size_z)
+        roisizesLayout.addWidget(self.txt_roi_z_factor)
+        roisizesLayout.addWidget(self.txt_roi_y_factor)
+        roisizesLayout.addWidget(self.txt_roi_x_factor)
         fitLayout.addLayout(roisizesLayout)
-        fitLayout.addLayout(minroisizesLayout)
         fitLayout.addWidget(self.but_auto_roi)
         fitLayout.addWidget(self.but_fit)
         plotFittedLayout = QHBoxLayout()
@@ -295,14 +431,14 @@ class SpotDetection(QWidget):
         filterLayout.addLayout(chk_layout, 0, 2)
         # sigma xy
         filterLayout.addWidget(self.lab_filter_sigma_xy_range, 1, 0)
-        filterLayout.addWidget(self.sld_filter_sigma_xy_range, 1, 1)
+        filterLayout.addWidget(self.sld_filter_sigma_xy_factor, 1, 1)
         chk_layout = QHBoxLayout()
         chk_layout.addWidget(self.chk_filter_sigma_xy_min)
         chk_layout.addWidget(self.chk_filter_sigma_xy_max)
         filterLayout.addLayout(chk_layout, 1, 2)
         # sigma z
         filterLayout.addWidget(self.lab_filter_sigma_z_range, 2, 0)
-        filterLayout.addWidget(self.sld_filter_sigma_z_range, 2, 1)
+        filterLayout.addWidget(self.sld_filter_sigma_z_factor, 2, 1)
         chk_layout = QHBoxLayout()
         chk_layout.addWidget(self.chk_filter_sigma_z_min)
         chk_layout.addWidget(self.chk_filter_sigma_z_max)
@@ -314,15 +450,35 @@ class SpotDetection(QWidget):
         chk_layout.addWidget(self.chk_filter_sigma_ratio_min)
         chk_layout.addWidget(self.chk_filter_sigma_ratio_max)
         filterLayout.addLayout(chk_layout, 3, 2)
+        # 
+        filterLayout.addWidget(self.lab_fit_dist_max_err_z_factor, 4, 0)
+        filterLayout.addWidget(self.sld_fit_dist_max_err_z_factor, 4, 1)
+        filterLayout.addWidget(self.chk_fit_dist_max_err_z_factor, 4, 2)
+        # 
+        filterLayout.addWidget(self.lab_fit_dist_max_err_xy_factor, 5, 0)
+        filterLayout.addWidget(self.sld_fit_dist_max_err_xy_factor, 5, 1)
+        filterLayout.addWidget(self.chk_fit_dist_max_err_xy_factor, 5, 2)
+        # 
+        filterLayout.addWidget(self.lab_min_spot_sep_z_factor, 6, 0)
+        filterLayout.addWidget(self.sld_min_spot_sep_z_factor, 6, 1)
+        filterLayout.addWidget(self.chk_min_spot_sep_z_factor, 6, 2)
+        # 
+        filterLayout.addWidget(self.lab_min_spot_sep_xy_factor, 7, 0)
+        filterLayout.addWidget(self.sld_min_spot_sep_xy_factor, 7, 1)
+        filterLayout.addWidget(self.chk_min_spot_sep_xy_factor, 7, 2)
+        # 
+        filterLayout.addWidget(self.lab_dist_boundary_z_factor, 8, 0)
+        filterLayout.addWidget(self.sld_dist_boundary_z_factor, 8, 1)
+        filterLayout.addWidget(self.chk_dist_boundary_z_factor, 8, 2)
+        # 
+        filterLayout.addWidget(self.lab_dist_boundary_xy_factor, 9, 0)
+        filterLayout.addWidget(self.sld_dist_boundary_xy_factor, 9, 1)
+        filterLayout.addWidget(self.chk_dist_boundary_xy_factor, 9, 2)
         # chi squared
-        filterLayout.addWidget(self.lab_filter_chi_squared, 4, 0)
-        filterLayout.addWidget(self.sld_filter_chi_squared, 4, 1)
-        filterLayout.addWidget(self.chk_filter_chi_squared, 4, 2)
-        # distance to center
-        filterLayout.addWidget(self.lab_filter_dist_center, 5, 0)
-        filterLayout.addWidget(self.sld_filter_dist_center, 5, 1)
-        filterLayout.addWidget(self.chk_filter_dist_center, 5, 2)
-        filterLayout.addWidget(self.but_filter, 6, 1)
+        filterLayout.addWidget(self.lab_filter_chi_squared, 10, 0)
+        filterLayout.addWidget(self.sld_filter_chi_squared, 10, 1)
+        filterLayout.addWidget(self.chk_filter_chi_squared, 10, 2)
+        filterLayout.addWidget(self.but_filter, 11, 1)
 
         # layout for saving and loading spots data and detection parameters
         saveloadLayout = QGridLayout()
@@ -337,31 +493,89 @@ class SpotDetection(QWidget):
         outerLayout.addLayout(filterLayout)
         outerLayout.addLayout(saveloadLayout)
 
+
         self.setLayout(outerLayout)
+        # general scroll area
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.layout().addWidget(self._scroll)
+        # # outerLayout.addWidget(self._scroll)
+
+        # self._make_sigmas_factors()
 
 
-    def _make_sigmas(self):
+    def _make_sigmas_factors(self):
         """
         Compute min and max of sigmas x, y and z with traditionnal settings.
         """
+        # TODO: add choice from physics / size µm / size px
+        na = float(self.txt_na.text())
+        ni = float(self.txt_ri.text())
+        # set emission wavelength in µm:
+        lambda_em = float(self.txt_lambda_em.text()) / 1000
+        # # TODO: add choice of coefficients for small/big sigmas
+        # self.sigma_z, self.sigma_xy, self.sigmas_min, self.sigmas_max,\
+        # self.filter_sigma_small, self.filter_sigma_large = fish.make_sigmas(na, ni, lambda_em)
 
-        sx = float(self.txt_spot_size_xy.text())
-        sz = float(self.txt_spot_size_z.text())
-        # FWHM = 2.355 x sigma
-        sigma_xy = sx / 2.355
-        sigma_z = sz / 2.355
-        # to reproduce LoG with Dog we need sigma_big = 1.6 * sigma_small
-        sigma_ratio = float(self.txt_sigma_ratio.text())
-        sigma_xy_small = sigma_xy / sigma_ratio**(1/2)
-        sigma_xy_large = sigma_xy * sigma_ratio**(1/2)
-        sigma_z_small = sigma_z / sigma_ratio**(1/2)
-        sigma_z_large = sigma_z * sigma_ratio**(1/2)
-        self.sld_sigma_xy_small.setValue(sigma_xy_small)
-        self.sld_sigma_xy_large.setValue(sigma_xy_large)
-        self.sld_sigma_z_small.setValue(sigma_z_small)
-        self.sld_sigma_z_large.setValue(sigma_z_large)
-        self.sigma_xy = sigma_xy
-        self.sigma_z = sigma_z
+        # print('in _make_sigmas:')
+        # print('na', na)
+        # print('ni', ni)
+        # print('lambda_em', lambda_em)
+        # print('self.sigma_z', self.sigma_z)
+        # print('self.sigma_xy', self.sigma_xy)
+        # print('-------')
+
+        # self.sld_sigma_z_small.setValue(self.filter_sigma_small[0])
+        # self.sld_sigma_z_large.setValue(self.filter_sigma_large[0])
+        # self.sld_sigma_xy_small.setValue(self.filter_sigma_small[1])
+        # self.sld_sigma_xy_large.setValue(self.filter_sigma_large[1])
+        # if self.auto_params:
+        #     self._make_roi_sizes()
+
+
+    def _make_roi_sizes(self):
+        """
+        Compute the x/y and z sizes of ROIs to fit gaussians to spots.
+        """
+        dz = float(self.txt_dstage.text())
+        dxy = float(self.txt_dc.text())
+        # self.fit_roi_sizes, self.min_fit_roi_sizes, self.min_roi_sizes_pix =\
+        #     fish.make_roi_sizes(self.sigma_z, self.sigma_xy, dz, dxy, coef_roi=(5, 12, 12), coef_min_roi=0.5)
+        
+        # print('in _make_roi_sizes')
+        # print('dz', dz)
+        # print('dxy', dxy)
+        # print('self.fit_roi_sizes', self.fit_roi_sizes)
+        # print('self.min_fit_roi_sizes', self.min_fit_roi_sizes)
+        # print('self.min_roi_sizes_pix', self.min_roi_sizes_pix)
+        # print('------------')
+
+        # self.txt_roi_size_xy.setText(str(self.fit_roi_sizes[1]))
+        # self.txt_roi_size_z.setText(str(self.fit_roi_sizes[0]))
+        # self.txt_min_roi_size_xy.setText(str(self.min_fit_roi_sizes[1]))
+        # self.txt_min_roi_size_z.setText(str(self.min_fit_roi_sizes[0]))
+        # if self.auto_params:
+        #     self._make_min_spot_sep()
+    
+
+    def _make_min_spot_sep(self):
+        pass
+        # self.min_spot_sep = fish.make_min_spot_sep(self.sigma_z, self.sigma_xy, coef_sep=(3, 3))
+        # self.txt_merge_peaks_z.setText(str(self.min_spot_sep[0]))
+        # self.txt_merge_peaks_xy.setText(str(self.min_spot_sep[1]))
+        # print('in _make_min_spot_sep:')
+        # print('sigma_z', self.sigma_z)
+        # print('sigma_xy', self.sigma_xy)
+        # print('sigmas_min', self.sigmas_min)
+        # print('sigmas_max', self.sigmas_max)
+        # print('filter_sigma_small', self.filter_sigma_small)
+        # print('filter_sigma_large', self.filter_sigma_large)
+        # print('fit_roi_sizes', self.fit_roi_sizes)
+        # print('min_fit_roi_sizes', self.min_fit_roi_sizes)
+        # print('min_roi_sizes_pix', self.min_roi_sizes_pix)
+        # print('min_spot_sep', self.min_spot_sep)
+        # print('-------')
 
 
     def _compute_dog(self):
@@ -371,35 +585,48 @@ class SpotDetection(QWidget):
         if len(self.viewer.layers) == 0:
             print("Open an image first")
         else:
-            filter_sigma_small = (self.sld_sigma_z_small.value, self.sld_sigma_xy_small.value, self.sld_sigma_xy_small.value)
-            filter_sigma_large = (self.sld_sigma_z_large.value, self.sld_sigma_xy_large.value, self.sld_sigma_xy_large.value)
-            pixel_sizes = (1, 1, 1)
-            sigma_cutoff = 2
-            kernel_small = localize.get_filter_kernel(filter_sigma_small, pixel_sizes, sigma_cutoff)
-            kernel_large = localize.get_filter_kernel(filter_sigma_large, pixel_sizes, sigma_cutoff)
-
-            # analyze specific image if selected, or first available one if no selection
-            if len(self.viewer.layers.selection) == 0:
-                img = self.viewer.layers[0].data
-            else:
-                # selection is a set, we need some wrangle to get the first element
-                first_selected_layer = next(iter(self.viewer.layers.selection))
-                img = first_selected_layer.data
+            # issue with slider and limited values range
+            # filter_sigma_small = (self.sld_sigma_z_small.value, self.sld_sigma_xy_small.value, self.sld_sigma_xy_small.value)
+            # filter_sigma_large = (self.sld_sigma_z_large.value, self.sld_sigma_xy_large.value, self.sld_sigma_xy_large.value)
+            dz = float(self.txt_dstage.text())
+            dxy = float(self.txt_dc.text())
+            pixel_sizes = (dz, dxy, dxy)
+            sigma_cutoff = 2 
             
-            img_high_pass = localize.filter_convolve(img, kernel_small, use_gpu=False)
-            img_low_pass = localize.filter_convolve(img, kernel_large, use_gpu=False)
-            img_filtered = img_high_pass - img_low_pass
-            if 'filtered' not in self.viewer.layers:
-                self.viewer.add_image(img_filtered, name='filtered')
-            else:
-                self.viewer.layers['filtered'].data = img_filtered
-            # basic auto thresholding
-            if self.auto_params:
-                blob_thresh = np.percentile(img_filtered.ravel(), 95)
-                self.sld_blob_thresh.setRange(np.percentile(img_filtered.ravel(), 10), 
-                                              img_filtered.max())
-                self.sld_blob_thresh.setValue(blob_thresh)
-    
+            # print("in _compute_dog")
+            # print('filter_sigma_small', self.filter_sigma_small)
+            # print('filter_sigma_large', self.filter_sigma_large)
+            # print('dz', dz)
+            # print('dxy', dxy)
+            # # analyze specific image if selected, or first available one if no selection
+            # if len(self.viewer.layers.selection) == 0:
+            #     img = self.viewer.layers[0].data
+            # else:
+            #     # selection is a set, we need some wrangle to get the first element
+            #     first_selected_layer = next(iter(self.viewer.layers.selection))
+            #     img = first_selected_layer.data
+            
+            # print('img shape', img.shape)
+            # img_filtered = fish.filter_dog(img, self.filter_sigma_small, self.filter_sigma_large,
+            #                                pixel_sizes, sigma_cutoff)
+            # if 'filtered' not in self.viewer.layers:
+            #     self.viewer.add_image(img_filtered, name='filtered')
+            # else:
+            #     self.viewer.layers['filtered'].data = img_filtered
+            # # basic auto thresholding
+            # if self.auto_params:
+            #     dog_thresh = np.percentile(img_filtered.ravel(), 95)
+            #     self.sld_dog_thresh.setRange(np.percentile(img_filtered.ravel(), 10), 
+            #                                   img_filtered.max())
+            #     self.sld_dog_thresh.setValue(dog_thresh)
+            # self.img = img
+
+
+    def _adapt_2D_data(self):
+        pass
+        # self.img, self.fit_roi_size, self.filter_sigma_small, self.filter_sigma_large, self.min_spot_sep =\
+        #     fish.adapt_2D_data(self.img, self.fit_roi_size, self.filter_sigma_small, self.filter_sigma_large, self.min_spot_sep)
+
 
     def _find_peaks(self):
         """
@@ -408,29 +635,27 @@ class SpotDetection(QWidget):
         if 'filtered' not in self.viewer.layers:
             print("Run a DoG filter on an image first")
         else:
-            blob_thresh = self.sld_blob_thresh.value()
-            img_filtered = self.viewer.layers['filtered'].data
-            img_filtered[img_filtered < blob_thresh] = 0
+            self._adapt_2D_data()
 
-            sx = sy = float(self.txt_spot_size_xy.text())
-            sz = float(self.txt_spot_size_z.text())
-            min_separations = np.array([sz, sy, sx]).astype(int)
+            # dog_thresh = self.sld_dog_thresh.value()
+            # img_filtered = self.viewer.layers['filtered'].data
+            # img_filtered[img_filtered < dog_thresh] = 0
+            # dz = float(self.txt_dstage.text())
+            # dxy = float(self.txt_dc.text())
+            # pixel_sizes = (dz, dxy, dxy)
 
-            footprint = localize.get_max_filter_footprint(min_separations=min_separations, drs=(1,1,1))
-            # array of size nz, ny, nx of True
+            # (self.z, self.y, self.x), self.centers_guess_inds, self.centers_guess, self.amps =\
+            #     fish.find_peaks(img_filtered, dog_thresh, self.min_spot_sep, pixel_sizes)
             
-            self.centers_guess_inds, self.amps = localize.find_peak_candidates(img_filtered, footprint, threshold=blob_thresh, use_gpu_filter=False)
-            if 'local maxis' not in self.viewer.layers:
-                self.viewer.add_points(self.centers_guess_inds, name='local maxis', blending='additive', size=3, face_color='r')
-            else:
-                self.viewer.layers['local maxis'].data = self.centers_guess_inds
-            if self.auto_params:
-                self._make_roi_sizes()
-            self.peaks_layer_name = 'local maxis'
-            # used variables for gaussian fit if peaks are not merged
-            self.use_centers_inds = self.centers_guess_inds
-            self.use_amps = self.amps
-            self.peaks_merged = False
+            # if 'local maxis' not in self.viewer.layers:
+            #     self.viewer.add_points(self.centers_guess_inds, name='local maxis', blending='additive', size=3, face_color='r')
+            # else:
+            #     self.viewer.layers['local maxis'].data = self.centers_guess_inds
+            # self.peaks_layer_name = 'local maxis'
+            # # used variables for gaussian fit if peaks are not merged
+            # self.use_centers_inds = self.centers_guess_inds
+            # self.use_amps = self.amps
+            # self.peaks_merged = False
 
 
     def _merge_peaks(self):
@@ -441,51 +666,35 @@ class SpotDetection(QWidget):
         if 'local maxis' not in self.viewer.layers:
             print("Find peaks first")
         else:
-            coords = self.centers_guess_inds
-            max_xy = float(self.txt_merge_peaks_xy.text())
-            max_z = float(self.txt_merge_peaks_z.text())
+            pass
+            # coords = self.centers_guess_inds
+            # dxy_min_sep = float(self.txt_merge_peaks_xy.text())
+            # dz_min_sep = float(self.txt_merge_peaks_z.text())
+            # img_filtered = self.viewer.layers['filtered'].data
 
-            # network based version
-            # weight_img = self.viewer.layers['filtered'].data # or use raw data: self.viewer.layers[0].data
-            # self.merged_centers_inds = ip.filter_nearby_peaks(coords, max_z, max_xy, weight_img)
-            # # need ravel_multi_index to get pixel values of weight_img at several 3D coordinates
-            # amplitudes_id = np.ravel_multi_index(self.merged_centers_inds.astype(int).transpose(), weight_img.shape)
-            # self.amps = weight_img.ravel()[amplitudes_id]
+            # # network based version
+            # # weight_img = self.viewer.layers['filtered'].data # or use raw data: self.viewer.layers[0].data
+            # # self.merged_centers_inds = ip.filter_nearby_peaks(coords, dz_min_sep, dxy_min_sep, weight_img)
+            # # # need ravel_multi_index to get pixel values of weight_img at several 3D coordinates
+            # # amplitudes_id = np.ravel_multi_index(self.merged_centers_inds.astype(int).transpose(), weight_img.shape)
+            # # self.amps = weight_img.ravel()[amplitudes_id]
 
-            # Peter's version
-            self.merged_centers_inds, inds_comb = localize.filter_nearby_peaks(coords, max_xy, max_z, weights=self.amps, mode="average")
-            self.merged_amps = self.amps[inds_comb]
-            nb_points = len(self.merged_centers_inds)
-            print(f"Found {nb_points} points separated by dxy > {max_xy} and dz > {max_z}")
+            # # Peter's version
+            # self.merged_centers_inds, self.merged_amps = fish.filter_peaks_distance(
+            #     self.centers_guess_inds, self.centers_guess, img_filtered, dxy_min_sep, dz_min_sep)
+            # nb_points = len(self.merged_centers_inds)
+            # print(f"Found {nb_points} points separated by dxy > {dxy_min_sep} and dz > {dz_min_sep}")
 
-            if 'merged maxis' not in self.viewer.layers:
-                self.viewer.add_points(self.merged_centers_inds, name='merged maxis', 
-                                       blending='additive', size=3, face_color='g')
-            else:
-                self.viewer.layers['merged maxis'].data = self.merged_centers_inds
-            # used variables for gaussian fit now that peaks are merged
-            self.peaks_layer_name = 'merged maxis'
-            self.use_centers_inds = self.merged_centers_inds
-            self.use_amps = self.merged_amps
-            self.peaks_merged = True
-
-
-    def _make_roi_sizes(self):
-        """
-        Compute the x/y and z sizes of ROIs to fit gaussians to spots.
-        """
-
-        sx = sy = float(self.txt_spot_size_xy.text())
-        sz = float(self.txt_spot_size_z.text())
-        fit_roi_sizes = (2.355 * np.array([sz, sy, sx])).astype(int)
-        min_fit_roi_sizes = fit_roi_sizes * 0.5
-        self.fit_roi_sizes = fit_roi_sizes
-        self.min_fit_roi_sizes = min_fit_roi_sizes
-
-        self.txt_roi_size_xy.setText(str(fit_roi_sizes[-1]))
-        self.txt_roi_size_z.setText(str(fit_roi_sizes[0]))
-        self.txt_min_roi_size_xy.setText(str(min_fit_roi_sizes[-1]))
-        self.txt_min_roi_size_z.setText(str(min_fit_roi_sizes[0]))
+            # if 'merged maxis' not in self.viewer.layers:
+            #     self.viewer.add_points(self.merged_centers_inds, name='merged maxis', 
+            #                            blending='additive', size=3, face_color='g')
+            # else:
+            #     self.viewer.layers['merged maxis'].data = self.merged_centers_inds
+            # # used variables for gaussian fit now that peaks are merged
+            # self.peaks_layer_name = 'merged maxis'
+            # self.use_centers_inds = self.merged_centers_inds
+            # self.use_amps = self.merged_amps
+            # self.peaks_merged = True
     
 
     def get_roi_coordinates(self, centers, sizes, max_coords_val, min_sizes, return_sizes=True):
@@ -561,85 +770,85 @@ class SpotDetection(QWidget):
         """
         Perform a gaussian fitting on each ROI.
         """
+        pass
+        # roi_size_xy = int(float(self.txt_roi_size_xy.text()))
+        # roi_size_z = int(float(self.txt_roi_size_z.text()))
+        # min_roi_size_xy = int(float(self.txt_min_roi_size_xy.text()))
+        # min_roi_size_z = int(float(self.txt_min_roi_size_z.text()))
+        # img = self.viewer.layers[0].data
 
-        roi_size_xy = int(float(self.txt_roi_size_xy.text()))
-        roi_size_z = int(float(self.txt_roi_size_z.text()))
-        min_roi_size_xy = int(float(self.txt_min_roi_size_xy.text()))
-        min_roi_size_z = int(float(self.txt_min_roi_size_z.text()))
-        img = self.viewer.layers[0].data
+        # fit_roi_sizes = np.array([roi_size_z, roi_size_xy, roi_size_xy])
+        # min_fit_roi_sizes = np.array([min_roi_size_z, min_roi_size_xy, min_roi_size_xy])
 
-        fit_roi_sizes = np.array([roi_size_z, roi_size_xy, roi_size_xy])
-        min_fit_roi_sizes = np.array([min_roi_size_z, min_roi_size_xy, min_roi_size_xy])
-
-        roi_coords, roi_sizes = self.get_roi_coordinates(
-            centers = self.use_centers_inds,  # first detected peaks or merged peaks
-            sizes = fit_roi_sizes, 
-            max_coords_val = np.array(img.shape) - 1, 
-            min_sizes = min_fit_roi_sizes,
-        )
-        nb_rois = roi_coords.shape[0]
-        # centers_guess is different from centers_guess_inds because each ROI 
-        # can be smaller on the borders of the image
-        centers_guess = (roi_sizes / 2)
+        # roi_coords, roi_sizes = self.get_roi_coordinates(
+        #     centers = self.use_centers_inds,  # first detected peaks or merged peaks
+        #     sizes = fit_roi_sizes, 
+        #     max_coords_val = np.array(img.shape) - 1, 
+        #     min_sizes = min_fit_roi_sizes,
+        # )
+        # nb_rois = roi_coords.shape[0]
+        # # centers_guess is different from centers_guess_inds because each ROI 
+        # # can be smaller on the borders of the image
+        # centers_guess = (roi_sizes / 2)
 
 
-        # actually fitting
-        all_res = []
-        chi_squared = []
-        # all_init_params = []
-        for i in range(nb_rois):
-            # extract ROI
-            roi = self.extract_ROI(img, roi_coords[i])
-            # fit gaussian in ROI
-            init_params = np.array([
-                self.use_amps[i], 
-                centers_guess[i, 2],
-                centers_guess[i, 1],
-                centers_guess[i, 0],
-                self.sigma_xy, 
-                self.sigma_z, 
-                roi.min(),
-            ])
-            fit_results = localize.fit_gauss_roi(
-                roi, 
-                (localize.get_coords(roi_sizes[i], drs=[1, 1, 1])), 
-                init_params,
-                fixed_params=np.full_like(init_params, False),
-            )
-            chi_squared.append(fit_results['chi_squared'])
-            all_res.append(fit_results['fit_params'])
+        # # actually fitting
+        # all_res = []
+        # chi_squared = []
+        # # all_init_params = []
+        # for i in range(nb_rois):
+        #     # extract ROI
+        #     roi = self.extract_ROI(img, roi_coords[i])
+        #     # fit gaussian in ROI
+        #     init_params = np.array([
+        #         self.use_amps[i], 
+        #         centers_guess[i, 2],
+        #         centers_guess[i, 1],
+        #         centers_guess[i, 0],
+        #         self.sigma_xy, 
+        #         self.sigma_z, 
+        #         roi.min(),
+        #     ])
+        #     fit_results = localize.fit_gauss_roi(
+        #         roi, 
+        #         (localize.get_coords(roi_sizes[i], drs=[1, 1, 1])), 
+        #         init_params,
+        #         fixed_params=np.full_like(init_params, False),
+        #     )
+        #     chi_squared.append(fit_results['chi_squared'])
+        #     all_res.append(fit_results['fit_params'])
 
-        # process all the results
-        all_res = np.array(all_res)
-        self.amplitudes = all_res[:, 0]
-        centers = all_res[:, 3:0:-1]
-        self.sigmas_xy = all_res[:, 4]
-        self.sigmas_z = all_res[:, 5]
-        self.offsets = all_res[:, 6]
-        self.chi_squared = np.array(chi_squared)
-        # distances from initial guess
-        self.dist_center = np.sqrt(np.sum((centers - centers_guess)**2, axis=1))
-        # add origin coordinates of each ROI
-        self.centers = centers + roi_coords[:, 0, :]
-        # composed variables for filtering
-        self.diff_amplitudes = self.amplitudes - self.offsets
-        self.sigma_ratios = self.sigmas_z / self.sigmas_xy
+        # # process all the results
+        # all_res = np.array(all_res)
+        # self.amplitudes = all_res[:, 0]
+        # centers = all_res[:, 3:0:-1]
+        # self.sigmas_xy = all_res[:, 4]
+        # self.sigmas_z = all_res[:, 5]
+        # self.offsets = all_res[:, 6]
+        # self.chi_squared = np.array(chi_squared)
+        # # distances from initial guess
+        # self.dist_center = np.sqrt(np.sum((centers - centers_guess)**2, axis=1))
+        # # add origin coordinates of each ROI
+        # self.centers = centers + roi_coords[:, 0, :]
+        # # composed variables for filtering
+        # self.diff_amplitudes = self.amplitudes - self.offsets
+        # self.sigma_ratios = self.sigmas_z / self.sigmas_xy
 
-        # update range of filters
-        p_mini = float(self.txt_filter_percentile_min.text())
-        p_maxi = float(self.txt_filter_percentile_max.text())
-        if self.auto_params:
-            self.sld_filter_amplitude_range.setRange(np.percentile(self.amplitudes, p_mini), np.percentile(self.amplitudes, p_maxi))
-            self.sld_filter_sigma_xy_range.setRange(np.percentile(self.sigmas_xy, p_mini), np.percentile(self.sigmas_xy, p_maxi))
-            self.sld_filter_sigma_z_range.setRange(np.percentile(self.sigmas_z, p_mini), np.percentile(self.sigmas_z, p_maxi))
-            self.sld_filter_sigma_ratio_range.setRange(np.percentile(self.sigma_ratios, p_mini), np.percentile(self.sigma_ratios, p_maxi))
-            self.sld_filter_chi_squared.setRange(np.percentile(self.chi_squared, p_mini), np.percentile(self.chi_squared, p_maxi))
-            self.sld_filter_dist_center.setRange(np.percentile(self.dist_center, p_mini), np.percentile(self.dist_center, p_maxi))
+        # # update range of filters
+        # p_mini = float(self.txt_filter_percentile_min.text())
+        # p_maxi = float(self.txt_filter_percentile_max.text())
+        # if self.auto_params:
+        #     self.sld_filter_amplitude_range.setRange(np.percentile(self.amplitudes, p_mini), np.percentile(self.amplitudes, p_maxi))
+        #     self.sld_filter_sigma_xy_factor.setRange(np.percentile(self.sigmas_xy, p_mini), np.percentile(self.sigmas_xy, p_maxi))
+        #     self.sld_filter_sigma_z_factor.setRange(np.percentile(self.sigmas_z, p_mini), np.percentile(self.sigmas_z, p_maxi))
+        #     self.sld_filter_sigma_ratio_range.setRange(np.percentile(self.sigma_ratios, p_mini), np.percentile(self.sigma_ratios, p_maxi))
+        #     self.sld_filter_chi_squared.setRange(np.percentile(self.chi_squared, p_mini), np.percentile(self.chi_squared, p_maxi))
+        #     self.sld_filter_dist_center.setRange(np.percentile(self.dist_center, p_mini), np.percentile(self.dist_center, p_maxi))
     
-        if 'fitted spots' not in self.viewer.layers:
-            self.viewer.add_points(self.centers, name='fitted spots', blending='additive', size=3, face_color='g')
-        else:
-            self.viewer.layers['fitted spots'].data = self.centers
+        # if 'fitted spots' not in self.viewer.layers:
+        #     self.viewer.add_points(self.centers, name='fitted spots', blending='additive', size=3, face_color='g')
+        # else:
+        #     self.viewer.layers['fitted spots'].data = self.centers
     
 
     def _plot_fitted_params(self):
@@ -651,33 +860,33 @@ class SpotDetection(QWidget):
         p_mini = float(self.txt_filter_percentile_min.text())
         p_maxi = float(self.txt_filter_percentile_max.text())
 
-        plt.figure()
-        plt.hist(self.amplitudes, bins='auto', range=self.sld_filter_amplitude_range.value())
-        plt.title("Distribution of amplitude values")
+        # plt.figure()
+        # plt.hist(self.amplitudes, bins='auto', range=self.sld_filter_amplitude_range.value())
+        # plt.title("Distribution of amplitude values")
 
-        plt.figure()
-        plt.hist(self.sigmas_xy, bins='auto', range=self.sld_filter_sigma_xy_range.value())
-        plt.title("Distribution of sigmas_xy values")
+        # plt.figure()
+        # plt.hist(self.sigmas_xy, bins='auto', range=self.sld_filter_sigma_xy_factor.value())
+        # plt.title("Distribution of sigmas_xy values")
 
-        plt.figure()
-        plt.hist(self.sigmas_z, bins='auto', range=self.sld_filter_sigma_z_range.value())
-        plt.title("Distribution of sigmas_z values")
+        # plt.figure()
+        # plt.hist(self.sigmas_z, bins='auto', range=self.sld_filter_sigma_z_factor.value())
+        # plt.title("Distribution of sigmas_z values")
 
-        plt.figure()
-        plt.hist(self.sigma_ratios, bins='auto', range=self.sld_filter_sigma_ratio_range.value())
-        plt.title("Distribution of sigma_ratios values")
+        # plt.figure()
+        # plt.hist(self.sigma_ratios, bins='auto', range=self.sld_filter_sigma_ratio_range.value())
+        # plt.title("Distribution of sigma_ratios values")
 
-        plt.figure()
-        plt.hist(self.chi_squared, bins='auto', range=(np.percentile(self.chi_squared, p_mini), 
-                                                       np.percentile(self.chi_squared, p_maxi)))
-        plt.title("Distribution of chi_squared values")
+        # plt.figure()
+        # plt.hist(self.chi_squared, bins='auto', range=(np.percentile(self.chi_squared, p_mini), 
+        #                                                np.percentile(self.chi_squared, p_maxi)))
+        # plt.title("Distribution of chi_squared values")
 
-        plt.figure()
-        plt.hist(self.dist_center, bins='auto', range=(np.percentile(self.dist_center, p_mini), 
-                                                       np.percentile(self.dist_center, p_maxi)))
-        plt.title("Distribution of dist_center values")
+        # plt.figure()
+        # plt.hist(self.dist_center, bins='auto', range=(np.percentile(self.dist_center, p_mini), 
+        #                                                np.percentile(self.dist_center, p_maxi)))
+        # plt.title("Distribution of dist_center values")
 
-        plt.show()
+        # plt.show()
     
 
     def _plot_fitted_params_2D(self):
@@ -689,40 +898,40 @@ class SpotDetection(QWidget):
         p_mini = float(self.txt_filter_percentile_min.text())
         p_maxi = float(self.txt_filter_percentile_max.text())
 
-        distrib = {
-            'amplitudes': {'data': self.amplitudes, 
-                           'range': self.sld_filter_amplitude_range.value()},
-            'sigmas_xy': {'data': self.sigmas_xy, 
-                          'range': self.sld_filter_sigma_xy_range.value()},
-            'sigmas_z': {'data': self.sigmas_z, 
-                         'range': self.sld_filter_sigma_z_range.value()},
-            'sigma_ratios': {'data': self.sigma_ratios, 
-                             'range': self.sld_filter_sigma_ratio_range.value()},
-            'chi_squared': {'data': self.chi_squared, 
-                            'range': (np.percentile(self.chi_squared, p_mini), 
-                                      np.percentile(self.chi_squared, p_maxi))},
-            'dist_center': {'data': self.dist_center, 
-                            'range': (np.percentile(self.dist_center, p_mini), 
-                                      np.percentile(self.dist_center, p_maxi))},
-        }
+        # distrib = {
+        #     'amplitudes': {'data': self.amplitudes, 
+        #                    'range': self.sld_filter_amplitude_range.value()},
+        #     'sigmas_xy': {'data': self.sigmas_xy, 
+        #                   'range': self.sld_filter_sigma_xy_factor.value()},
+        #     'sigmas_z': {'data': self.sigmas_z, 
+        #                  'range': self.sld_filter_sigma_z_factor.value()},
+        #     'sigma_ratios': {'data': self.sigma_ratios, 
+        #                      'range': self.sld_filter_sigma_ratio_range.value()},
+        #     'chi_squared': {'data': self.chi_squared, 
+        #                     'range': (np.percentile(self.chi_squared, p_mini), 
+        #                               np.percentile(self.chi_squared, p_maxi))},
+        #     'dist_center': {'data': self.dist_center, 
+        #                     'range': (np.percentile(self.dist_center, p_mini), 
+        #                               np.percentile(self.dist_center, p_maxi))},
+        # }
         
-        var_labels = list(distrib.keys())
-        var_combi = itertools.combinations(var_labels, 2)
-        for var_x, var_y in var_combi:
-            x_mini, x_maxi = distrib[var_x]['range']
-            y_mini, y_maxi = distrib[var_y]['range']
-            x_select = np.logical_and(distrib[var_x]['data'] >= x_mini, distrib[var_x]['data'] <= x_maxi)
-            y_select = np.logical_and(distrib[var_y]['data'] >= y_mini, distrib[var_y]['data'] <= y_maxi)
-            select = np.logical_and(x_select, y_select)
-            x_data = distrib[var_x]['data'][select]
-            y_data = distrib[var_y]['data'][select]
+        # var_labels = list(distrib.keys())
+        # var_combi = itertools.combinations(var_labels, 2)
+        # for var_x, var_y in var_combi:
+        #     x_mini, x_maxi = distrib[var_x]['range']
+        #     y_mini, y_maxi = distrib[var_y]['range']
+        #     x_select = np.logical_and(distrib[var_x]['data'] >= x_mini, distrib[var_x]['data'] <= x_maxi)
+        #     y_select = np.logical_and(distrib[var_y]['data'] >= y_mini, distrib[var_y]['data'] <= y_maxi)
+        #     select = np.logical_and(x_select, y_select)
+        #     x_data = distrib[var_x]['data'][select]
+        #     y_data = distrib[var_y]['data'][select]
 
-            plt.figure()
-            plt.scatter(x_data, y_data, s=10, marker='.', c='b', alpha=0.5)
-            plt.title(f"Distributions of {var_x} and {var_y}")
-            plt.xlabel(var_x)
-            plt.ylabel(var_y)
-            plt.show()
+        #     plt.figure()
+        #     plt.scatter(x_data, y_data, s=10, marker='.', c='b', alpha=0.5)
+        #     plt.title(f"Distributions of {var_x} and {var_y}")
+        #     plt.xlabel(var_x)
+        #     plt.ylabel(var_y)
+        #     plt.show()
 
 
     def _filter_spots(self):
@@ -733,36 +942,36 @@ class SpotDetection(QWidget):
         # list of boolean filters for all spots thresholds
         selectors = []
         
-        if self.chk_filter_amplitude_min.isChecked():
-            selectors.append(self.amplitudes >= self.sld_filter_amplitude_range.value()[0])
-        if self.chk_filter_amplitude_max.isChecked():
-            selectors.append(self.amplitudes <= self.sld_filter_amplitude_range.value()[1])
-        if self.chk_filter_sigma_xy_min.isChecked():
-            selectors.append(self.sigmas_xy >= self.sld_filter_sigma_xy_range.value()[0])
-        if self.chk_filter_sigma_xy_max.isChecked():
-            selectors.append(self.sigmas_xy <= self.sld_filter_sigma_xy_range.value()[1])
-        if self.chk_filter_sigma_z_min.isChecked():
-            selectors.append(self.sigmas_z >= self.sld_filter_sigma_z_range.value()[0])
-        if self.chk_filter_sigma_z_max.isChecked():
-            selectors.append(self.sigmas_z <= self.sld_filter_sigma_z_range.value()[1])
-        if self.chk_filter_sigma_ratio_min.isChecked():
-            selectors.append(self.sigma_ratios >= self.sld_filter_sigma_ratio_range.value()[0])
-        if self.chk_filter_sigma_ratio_max.isChecked():
-            selectors.append(self.sigma_ratios <= self.sld_filter_sigma_ratio_range.value()[1])
-        if self.chk_filter_chi_squared.isChecked():
-            selectors.append(self.chi_squared >= self.sld_filter_chi_squared.value())
-        if self.chk_filter_dist_center.isChecked():
-            selectors.append(self.dist_center <= self.sld_filter_dist_center.value())
+        # if self.chk_filter_amplitude_min.isChecked():
+        #     selectors.append(self.amplitudes >= self.sld_filter_amplitude_range.value()[0])
+        # if self.chk_filter_amplitude_max.isChecked():
+        #     selectors.append(self.amplitudes <= self.sld_filter_amplitude_range.value()[1])
+        # if self.chk_filter_sigma_xy_min.isChecked():
+        #     selectors.append(self.sigmas_xy >= self.sld_filter_sigma_xy_factor.value()[0])
+        # if self.chk_filter_sigma_xy_max.isChecked():
+        #     selectors.append(self.sigmas_xy <= self.sld_filter_sigma_xy_factor.value()[1])
+        # if self.chk_filter_sigma_z_min.isChecked():
+        #     selectors.append(self.sigmas_z >= self.sld_filter_sigma_z_factor.value()[0])
+        # if self.chk_filter_sigma_z_max.isChecked():
+        #     selectors.append(self.sigmas_z <= self.sld_filter_sigma_z_factor.value()[1])
+        # if self.chk_filter_sigma_ratio_min.isChecked():
+        #     selectors.append(self.sigma_ratios >= self.sld_filter_sigma_ratio_range.value()[0])
+        # if self.chk_filter_sigma_ratio_max.isChecked():
+        #     selectors.append(self.sigma_ratios <= self.sld_filter_sigma_ratio_range.value()[1])
+        # if self.chk_filter_chi_squared.isChecked():
+        #     selectors.append(self.chi_squared >= self.sld_filter_chi_squared.value())
+        # if self.chk_filter_dist_center.isChecked():
+        #     selectors.append(self.dist_center <= self.sld_filter_dist_center.value())
 
-        if len(selectors) == 0:
-            print("Check at list one box to activate filters")
-        else:
-            self.spot_select = np.logical_and.reduce(selectors)
+        # if len(selectors) == 0:
+        #     print("Check at list one box to activate filters")
+        # else:
+        #     self.spot_select = np.logical_and.reduce(selectors)
         
-            # self.viewer.layers['filtered spots'].data = self.centers[self.spot_select] doesn't work
-            if 'filtered spots' in self.viewer.layers:
-                del self.viewer.layers['filtered spots']
-            self.viewer.add_points(self.centers[self.spot_select], name='filtered spots', blending='additive', size=3, face_color='b')
+        #     # self.viewer.layers['filtered spots'].data = self.centers[self.spot_select] doesn't work
+        #     if 'filtered spots' in self.viewer.layers:
+        #         del self.viewer.layers['filtered spots']
+        #     self.viewer.add_points(self.centers[self.spot_select], name='filtered spots', blending='additive', size=3, face_color='b')
             
 
     def _save_spots(self):
@@ -846,7 +1055,7 @@ class SpotDetection(QWidget):
             'sld_sigma_xy_small': self.sld_sigma_xy_small.value,
             'sld_sigma_z_large': self.sld_sigma_z_large.value,
             'sld_sigma_xy_large': self.sld_sigma_xy_large.value,
-            'sld_blob_thresh': self.sld_blob_thresh.value(),
+            'sld_dog_thresh': self.sld_dog_thresh.value(),
             'peaks_merged': self.peaks_merged,
             'txt_merge_peaks_xy': float(self.txt_merge_peaks_xy.text()),
             'txt_merge_peaks_z': float(self.txt_merge_peaks_z.text()),
@@ -859,10 +1068,10 @@ class SpotDetection(QWidget):
             'sld_filter_amplitude_range': self.sld_filter_amplitude_range.value(),
             'chk_filter_sigma_xy_min': self.chk_filter_sigma_xy_min.isChecked(),
             'chk_filter_sigma_xy_max': self.chk_filter_sigma_xy_max.isChecked(),
-            'sld_filter_sigma_xy_range': self.sld_filter_sigma_xy_range.value(),
+            'sld_filter_sigma_xy_factor': self.sld_filter_sigma_xy_factor.value(),
             'chk_filter_sigma_z_min': self.chk_filter_sigma_z_min.isChecked(),
             'chk_filter_sigma_z_max': self.chk_filter_sigma_z_max.isChecked(),
-            'sld_filter_sigma_z_range': self.sld_filter_sigma_z_range.value(),
+            'sld_filter_sigma_z_factor': self.sld_filter_sigma_z_factor.value(),
             'chk_filter_sigma_ratio_min': self.chk_filter_sigma_ratio_min.isChecked(),
             'chk_filter_sigma_ratio_max': self.chk_filter_sigma_ratio_max.isChecked(),
             'sld_filter_sigma_ratio_range': self.sld_filter_sigma_ratio_range.value(),
@@ -914,7 +1123,7 @@ class SpotDetection(QWidget):
             self.sld_sigma_xy_small.setValue(detection_parameters['sld_sigma_xy_small'])
             self.sld_sigma_z_large.setValue(detection_parameters['sld_sigma_z_large'])
             self.sld_sigma_xy_large.setValue(detection_parameters['sld_sigma_xy_large'])
-            self.sld_blob_thresh.setValue(detection_parameters['sld_blob_thresh'])
+            self.sld_dog_thresh.setValue(detection_parameters['sld_dog_thresh'])
             self.peaks_merged = detection_parameters['peaks_merged']
             self.txt_merge_peaks_xy.setText(str(detection_parameters['txt_merge_peaks_xy']))
             self.txt_merge_peaks_z.setText(str(detection_parameters['txt_merge_peaks_z']))
@@ -928,12 +1137,12 @@ class SpotDetection(QWidget):
             self.sld_filter_amplitude_range.setValue(detection_parameters['sld_filter_amplitude_range'])
             self.chk_filter_sigma_xy_min.setChecked(detection_parameters['chk_filter_sigma_xy_min'])
             self.chk_filter_sigma_xy_max.setChecked(detection_parameters['chk_filter_sigma_xy_max'])
-            self.sld_filter_sigma_xy_range.setRange(*self._make_range(detection_parameters['sld_filter_sigma_xy_range']))
-            self.sld_filter_sigma_xy_range.setValue(detection_parameters['sld_filter_sigma_xy_range'])
+            self.sld_filter_sigma_xy_factor.setRange(*self._make_range(detection_parameters['sld_filter_sigma_xy_factor']))
+            self.sld_filter_sigma_xy_factor.setValue(detection_parameters['sld_filter_sigma_xy_factor'])
             self.chk_filter_sigma_z_min.setChecked(detection_parameters['chk_filter_sigma_z_min'])
             self.chk_filter_sigma_z_max.setChecked(detection_parameters['chk_filter_sigma_z_max'])
-            self.sld_filter_sigma_z_range.setRange(*self._make_range(detection_parameters['sld_filter_sigma_z_range']))
-            self.sld_filter_sigma_z_range.setValue(detection_parameters['sld_filter_sigma_z_range'])
+            self.sld_filter_sigma_z_factor.setRange(*self._make_range(detection_parameters['sld_filter_sigma_z_factor']))
+            self.sld_filter_sigma_z_factor.setValue(detection_parameters['sld_filter_sigma_z_factor'])
             self.chk_filter_sigma_ratio_min.setChecked(detection_parameters['chk_filter_sigma_ratio_min'])
             self.chk_filter_sigma_ratio_max.setChecked(detection_parameters['chk_filter_sigma_ratio_max'])
             self.sld_filter_sigma_ratio_range.setRange(*self._make_range(detection_parameters['sld_filter_sigma_ratio_range']))
@@ -951,7 +1160,7 @@ class SpotDetection(QWidget):
                 warnings.warn("sigma_xy or sigma_z was not found in loaded parameters, they will be recomputed, "\
                               "which may overwrite some parameters if they differed from autocomputed values", 
                                RuntimeWarning)
-                self._make_sigmas()
+                self._make_sigmas_factors()
 
 
 
