@@ -25,7 +25,7 @@ https://napari.org/plugins/stable/index.html
 
 This package relies on [opm-merfish-analysis](https://github.com/QI2lab/opm-merfish-analysis), that details how to install other dependencies such as [localize-psf](https://github.com/QI2lab/localize-psf) and a fork of [GPUfit](https://github.com/QI2lab/Gpufit), as well as CUDA dependencies. Then you can run:
 
-    pip install git+https://github.com/AlexCoul/napari-spot-detection.git
+    pip install git+https://github.com/QI2lab/napari-spot-detection.git
 
 
 ## Contributing
