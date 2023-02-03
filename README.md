@@ -23,54 +23,7 @@ https://napari.org/plugins/stable/index.html
 
 ## Installation
 
-~~You can install `napari-spot-detection` via [pip]:~~
-~~pip install napari-spot-detection~~
-For now the package has complex dependencies, hence the lack of automated tests and CI.  
-You'll need ideally a working CUDA installation (brace yourself), and non optionally, the custom versions of GPUfit as well as the localize-psf library:
-
-```bash
-# Prepare installation directory
-INSTALL_DIR='~/Programs'  # where libraries will be downloaded and installed
-mkdir -p $INSTALL_DIR
-cd $INSTALL_DIR
-
-# activate your pyenv of conda python environment, then:
-
-# Install GPUfit:
-git clone https://github.com/QI2lab/Gpufit.git
-cd Gpufit
-# path to cmake command
-cmake_path=$(which cmake)
-# directory where gpu
-build_dir="../gpufit_build"
-mkdir $build_dir
-cd $build_dir
-$cmake_path -DCMAKE_BUILD_TYPE=RELEASE ../Gpufit
-make
-# go to the folder with compiled library pyGpufit
-cd $build_dir/pyGpufit
-pip install .
-
-cd $INSTALL_DIR
-# Install localize-psf:
-git clone https://github.com/QI2lab/localize-psf.git
-cd localize-psf
-# in setup.py I changed `extras = {'gpu': ['cupy'],` to `extras = {'gpu': ['cupy-cuda114'],`
-# to match my CUDA installation and avoid a ore recent (incompatible) version to be installed
-pip install --no-cache-dir .['gpu']
-# or pip install --no-cache-dir . if CUDA is not available
-
-# Install napari-spot-detection:
-cd $INSTALL_DIR
-git clone https://github.com/AlexCoul/napari-spot-detection.git
-cd napari-spot-detection
-pip install .
-# or pip install -e .  if you want to modify the plugin
-```
-
-
-
-To install latest development version :
+This package relies on [opm-merfish-analysis](https://github.com/QI2lab/opm-merfish-analysis), that details how to install other dependencies such as [localize-psf](https://github.com/QI2lab/localize-psf) and a fork of [GPUfit](https://github.com/QI2lab/Gpufit), as well as CUDA dependencies. Then you can run:
 
     pip install git+https://github.com/AlexCoul/napari-spot-detection.git
 
