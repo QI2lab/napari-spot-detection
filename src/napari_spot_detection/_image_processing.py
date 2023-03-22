@@ -1,5 +1,4 @@
 import numpy as np
-from tysserand import tysserand as ty
 
 
 def compute_distances(source, target, method='xy_z_orthog', dist_fct='euclidian', tilt_vector=None):
@@ -305,54 +304,3 @@ def merge_cluster_nodes(coords, pairs, weights=None, split_big_clust=False, clus
     merged_coords = np.vstack(merged_coords)
     return merged_coords
 
-
-def filter_nearby_peaks(coords, max_z, max_xy, weight_img=None,
-                        split_big_clust=False, cluster_size=None):
-    """
-    Merge nearby peaks in an image by building a radial distance graph and cutting it given
-    distance thresholds in the xy plane and along the z axis.
-
-    Parameters
-    ----------
-    coords : ndarray
-        Coordinates of nodes, array of shape nb_nodes x 3.
-    max_z : float
-        Distance threshold along the z axis.
-    max_xy : float
-        Distance threshold in the xy plane.
-    weight_img : ndarray
-        Image used to find peaks, now used to weight peaks coordinates during merge.
-        If None, equal weight is given to peaks coordinates.
-    split_big_clust : bool
-        If True, cluster big enough to contain multiple objects of interest (like spots)
-        are split into sub-clusters.
-    cluster_size : list | array
-        The threshold z and x/y size of clusters above which they are split.
-    
-    Returns
-    -------
-    merged_coords : ndarray
-        The coordinates of merged peaks.
-    """
-
-    # build the radial distance network using the bigest radius: max distance along z axis
-    pairs = ty.build_rdn(coords=coords, r=max_z)
-    source = coords[pairs[:, 0]]
-    target = coords[pairs[:, 1]]
-    # compute the 2 distances arrays
-    dist_z, dist_xy = compute_distances(source, target)
-    # perform grph cut from the 2 distance thresholds
-    _, pairs = cut_graph_bidistance(dist_z, dist_xy, max_z, max_xy, pairs=pairs)
-
-    if weight_img is not None:
-        # need ravel_multi_index to get pixel values of weight_img at several 3D coordinates
-        amplitudes_id = np.ravel_multi_index(coords.transpose(), weight_img.shape)
-        weights = weight_img.ravel()[amplitudes_id]
-    else:
-        weights = None  # array of ones will be generated in merge_cluster_nodes
-    # merge nearby nodes coordinates
-    merged_coords = merge_cluster_nodes(coords, pairs, weights,
-                                        split_big_clust=split_big_clust, 
-                                        cluster_size=cluster_size)
-
-    return merged_coords
