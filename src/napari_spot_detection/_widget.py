@@ -841,8 +841,8 @@ class SpotDetection(QWidget):
             print("starting find candidates")
             self._spots3d.find_candidates_params = {
                 'threshold' : self.sld_dog_thresh.value(),
-                'min_spot_xy' : self.sld_min_spot_xy_factor.value(),
-                'min_spot_z' : self.sld_min_spot_z_factor.value(),
+                'min_spot_xy_factor' : self.sld_min_spot_xy_factor.value(),
+                'min_spot_z_factor' : self.sld_min_spot_z_factor.value(),
                 }
             self._spots3d.scan_chunk_size = 64 # GPU timeout on OPM if > 64. Will change registry settings for TDM timeout.
             self._spots3d.run_find_candidates()
@@ -942,7 +942,7 @@ class SpotDetection(QWidget):
         p_mini = float(self.txt_filter_percentile_min.text())
         p_maxi = float(self.txt_filter_percentile_max.text())
         if self.auto_params:
-            self.sld_filter_amplitude_range.setRange(np.percentile(self._amplitudes, p_mini), np.percentile(self._amplitudes, p_maxi))
+            self.sld_filter_amplitude_range.setRange(max(0, np.percentile(self._amplitudes, p_mini)), np.percentile(self._amplitudes, p_maxi))
             self.sld_filter_sigma_xy_factor.setRange(np.percentile(self._sigmas_xy_factors, p_mini), np.percentile(self._sigmas_xy_factors, p_maxi))
             self.sld_filter_sigma_z_factor.setRange(np.percentile(self._sigmas_z_factors, p_mini), np.percentile(self._sigmas_z_factors, p_maxi))
             self.sld_filter_sigma_ratio_range.setRange(np.percentile(self._sigma_ratios, p_mini), np.percentile(self._sigma_ratios, p_maxi))
@@ -965,7 +965,8 @@ class SpotDetection(QWidget):
         p_maxi = float(self.txt_filter_percentile_max.text())
 
         plt.figure()
-        plt.hist(self._amplitudes, bins='auto', range=self.sld_filter_amplitude_range.value())
+        plt.hist(self._amplitudes, bins='auto', range=[self.sld_filter_amplitude_range.value()[0],
+                                                       self.sld_filter_amplitude_range.value()[1]])
         plt.title("Distribution of amplitude values")
 
         plt.figure()
