@@ -51,6 +51,7 @@ class FullSlider(QWidget):
 
     def __init__(self, range=(0, 1), step=0.01, label='', layout=QHBoxLayout, *args, **kwargs):
         super(FullSlider, self).__init__(*args, **kwargs)
+        np.set_printoptions(edgeitems=10, linewidth=200)
 
         self.step = step
 
@@ -100,6 +101,9 @@ class SpotDetection(QWidget):
         # automatic adaptation of parameters when steps complete, False when loading parameters
         self.auto_params = True 
         self.spots3d = None
+        self._spot_fitted = False
+        self._centers_fit_masked = None
+        self._fit_strs = None
         
         self.setLayout(QVBoxLayout())
         self.layout().setSpacing(0)
@@ -429,11 +433,11 @@ class SpotDetection(QWidget):
         self.txt_n_spots_to_fit.setText('250000')
         self.lab_roi_sizes = QLabel('Fit ROI size factors (z / y / x)')
         self.txt_roi_z_factor= QLineEdit()
-        self.txt_roi_z_factor.setText('3')
+        self.txt_roi_z_factor.setText('5')
         self.txt_roi_y_factor = QLineEdit()
-        self.txt_roi_y_factor.setText('3')
+        self.txt_roi_y_factor.setText('5')
         self.txt_roi_x_factor = QLineEdit()
-        self.txt_roi_x_factor.setText('3')
+        self.txt_roi_x_factor.setText('5')
 
         self.but_fit = QPushButton()
         self.but_fit.setText('Fit spots')
@@ -746,7 +750,12 @@ class SpotDetection(QWidget):
             if name not in self.viewer.layers:
                 self.viewer.add_points(data, name=name, **kwargs)
             else:
-                self.viewer.layers[name].data = data
+                if 'text' in kwargs:
+                    # need to delete the layer to update the text
+                    del self.viewer[name]
+                    self.viewer.add_points(data, name=name, **kwargs)
+                else:
+                    self.viewer.layers[name].data = data
 
     def _get_spot3d(self):
         """
@@ -823,7 +832,7 @@ class SpotDetection(QWidget):
             else:
                 self._spots3d.dog_filter_source_data = 'raw'
             # add choice of chunk size in GUI?
-            self._spots3d.scan_chunk_size = 64 # GPU out-of-memory on OPM PC if > 64
+            self._spots3d.scan_chunk_size = 16 # GPU out-of-memory on OPM PC if > 64
             self._spots3d.run_DoG_filter()
             print("finished DoG filter")
             self._add_image(
@@ -947,9 +956,9 @@ class SpotDetection(QWidget):
         p_maxi = float(self.txt_filter_percentile_max.text())
         if self.auto_params:
             self.sld_filter_amplitude_range.setRange(max(0, np.percentile(self._amplitudes, p_mini)), np.percentile(self._amplitudes, p_maxi))
-            self.sld_filter_sigma_xy_factor.setRange(np.percentile(self._sigmas_xy_factors, p_mini), np.percentile(self._sigmas_xy_factors, p_maxi))
-            self.sld_filter_sigma_z_factor.setRange(np.percentile(self._sigmas_z_factors, p_mini), np.percentile(self._sigmas_z_factors, p_maxi))
-            self.sld_filter_sigma_ratio_range.setRange(np.percentile(self._sigma_ratios, p_mini), np.percentile(self._sigma_ratios, p_maxi))
+            self.sld_filter_sigma_xy_factor.setRange(0, 10)
+            self.sld_filter_sigma_z_factor.setRange(0, 10)
+            self.sld_filter_sigma_ratio_range.setRange(0, 10)
             self.sld_fit_dist_max_err_z_factor.setRange(np.percentile(self._dist_fit_z_factors, p_mini), np.percentile(self._dist_fit_z_factors, p_maxi))
             self.sld_fit_dist_max_err_xy_factor.setRange(np.percentile(self._dist_fit_xy_factors, p_mini), np.percentile(self._dist_fit_xy_factors, p_maxi))
             # self.sld_min_spot_sep_z_factor.setRange(np.percentile(self._dist_fit_xy, p_mini), np.percentile(self._dist_fit_xy, p_maxi))
@@ -1115,14 +1124,10 @@ class SpotDetection(QWidget):
                 edge_color=[0, 1, 0, 1],
                 size=self._spots3d._spot_filter_params['min_spot_sep'][1],
                 features={"rejection_reason": strs},
-                        #"roi_number": roi_inds_beads[np.logical_not(to_keep_beads)]},
                 text={'string': '{rejection_reason}',
-                    'size': 100 * self.scale[1],
-                    'color': 'white',
-                    # avoid translation as it doesn't adapt dynamically when switching between 2D and 3D views
-                    # 'translation': np.array([self._spots3d._fit_candidate_spots_params['roi_y'] / 2, 
-                    #                          self._spots3d._fit_candidate_spots_params['roi_x'] / 2]),
-                    },
+                      'size': 10,
+                      'color': 'white',
+                      },
             )
         
     def _show_filter_values(self):
@@ -1290,12 +1295,12 @@ class SpotDetection(QWidget):
             # self.txt_adapthist_y.setText(str(detection_parameters['']))
             # self.txt_adapthist_z.setText(str(detection_parameters['']))
             
-            self.sld_dog_sigma_x_factor.setRange(detection_parameters['DoG_filter_params']['sigma_small_x_factor'],
-                                                  detection_parameters['DoG_filter_params']['sigma_large_x_factor'])
-            self.sld_dog_sigma_y_factor.setRange(detection_parameters['DoG_filter_params']['sigma_small_y_factor'],
-                                                  detection_parameters['DoG_filter_params']['sigma_large_y_factor'])
-            self.sld_dog_sigma_z_factor.setRange(detection_parameters['DoG_filter_params']['sigma_small_z_factor'],
-                                                  detection_parameters['DoG_filter_params']['sigma_large_z_factor'])
+            self.sld_dog_sigma_x_factor.setValue((detection_parameters['DoG_filter_params']['sigma_small_x_factor'],
+                                                  detection_parameters['DoG_filter_params']['sigma_large_x_factor']))
+            self.sld_dog_sigma_y_factor.setValue((detection_parameters['DoG_filter_params']['sigma_small_y_factor'],
+                                                  detection_parameters['DoG_filter_params']['sigma_large_y_factor']))
+            self.sld_dog_sigma_z_factor.setValue((detection_parameters['DoG_filter_params']['sigma_small_z_factor'],
+                                                  detection_parameters['DoG_filter_params']['sigma_large_z_factor']))
             self.sld_dog_thresh.setValue(detection_parameters['find_candidates_params']['threshold'])
             if detection_parameters['dog_filter_source_data'] == 'decon':
                 self.cbx_dog_choice.setCurrentIndex(0)
@@ -1309,15 +1314,15 @@ class SpotDetection(QWidget):
             self.txt_roi_y_factor.setText(str(detection_parameters['fit_candidate_spots_params']['roi_y_factor']))
             self.txt_roi_x_factor.setText(str(detection_parameters['fit_candidate_spots_params']['roi_x_factor']))
 
-            self.sld_filter_amplitude_range.setRange(detection_parameters['spot_filter_params']['amp_min'],
-                                                      detection_parameters['spot_filter_params']['amp_min'] * 500) # amp max not considered actually
-            self.sld_filter_sigma_xy_factor.setRange(detection_parameters['spot_filter_params']['sigma_min_xy_factor'],
-                                                     detection_parameters['spot_filter_params']['sigma_max_xy_factor'])
-            self.sld_filter_sigma_z_factor.setRange(detection_parameters['spot_filter_params']['sigma_min_z_factor'],
-                                                    detection_parameters['spot_filter_params']['sigma_max_z_factor'])
+            self.sld_filter_amplitude_range.setValue((detection_parameters['spot_filter_params']['amp_min'],
+                                                      detection_parameters['spot_filter_params']['amp_min'] * 500)) # amp max not considered actually
+            self.sld_filter_sigma_xy_factor.setValue((detection_parameters['spot_filter_params']['sigma_min_xy_factor'],
+                                                     detection_parameters['spot_filter_params']['sigma_max_xy_factor']))
+            self.sld_filter_sigma_z_factor.setValue((detection_parameters['spot_filter_params']['sigma_min_z_factor'],
+                                                    detection_parameters['spot_filter_params']['sigma_max_z_factor']))
             try:
-                self.sld_filter_sigma_ratio_range.setRange((detection_parameters['spot_filter_params']['min_sigma_ratio'], 
-                                                            detection_parameters['spot_filter_params']['min_sigma_ratio']))
+                self.sld_filter_sigma_ratio_range.setValue((detection_parameters['spot_filter_params']['min_sigma_ratio'],
+                                                            detection_parameters['spot_filter_params']['max_sigma_ratio']))
             except:
                 print("There was no sigma_ratio boundaries defined")
             self.sld_fit_dist_max_err_z_factor.setValue(detection_parameters['spot_filter_params']['fit_dist_max_err_z_factor'])
