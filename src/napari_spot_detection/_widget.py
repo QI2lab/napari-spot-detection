@@ -555,6 +555,9 @@ class SpotDetection(QWidget):
         self.but_inspect= QPushButton()
         self.but_inspect.setText('Inspect filtering')
         self.but_inspect.clicked.connect(self._inspect_filtering)
+        self.but_show_filter_values = QPushButton()
+        self.but_show_filter_values.setText('Show filter values')
+        self.but_show_filter_values.clicked.connect(self._show_filter_values)
 
         # layout for filtering gaussian spots
         filterLayout = QGridLayout()
@@ -615,7 +618,8 @@ class SpotDetection(QWidget):
         filterLayout.addWidget(self.sld_filter_chi_squared, 10, 1)
         filterLayout.addWidget(self.chk_filter_chi_squared, 10, 2)
         filterLayout.addWidget(self.but_filter, 11, 1)
-        filterLayout.addWidget(self.but_inspect, 12, 1)
+        filterLayout.addWidget(self.but_show_filter_values, 12, 1)
+        filterLayout.addWidget(self.but_inspect, 13, 1)
         group_layout.addLayout(filterLayout)
 
         return group
@@ -1070,7 +1074,7 @@ class SpotDetection(QWidget):
         }
         self._spots3d.spot_filter_params = spot_filter_params
         print("starting filter spots")
-        self._spots3d.run_filter_spots()
+        self._spots3d.run_filter_spots(return_values=True)
         print("finished filter spots")
 
         self._spot_select = self._spots3d._to_keep
@@ -1120,6 +1124,40 @@ class SpotDetection(QWidget):
                     #                          self._spots3d._fit_candidate_spots_params['roi_x'] / 2]),
                     },
             )
+        
+    def _show_filter_values(self):
+
+        if self._centers_fit_masked is None:
+            print("Filter fitted spots first.")
+        else:
+            filter_values = self._spots3d._filter_values.copy()
+            filter_names = list(self._spots3d._filter_names)
+
+            # rescale sigma-based statistics to a ratio from theoritical sigma xy and z
+            filter_values[:, 1] = filter_values[:, 1] / self._spots3d._sigma_xy
+            filter_values[:, 2] = filter_values[:, 2] / self._spots3d._sigma_z
+            filter_names[1] = filter_names[1] + ' factor'
+            filter_names[2] = filter_names[2] + ' factor'
+
+            if self._fit_strs is None:
+                self._fit_strs = ["\n".join([f'{col}: {val:.2f}' for col, val in zip(filter_names, filter_row)])
+                                  for filter_row in filter_values]
+
+            self._add_points(
+                self._centers,
+                symbol="disc",
+                name="filter statistics",
+                out_of_slice_display=False,
+                opacity=1,
+                face_color=[0, 0, 0, 0],
+                edge_color=[0, 0, 0, 0],
+                size=self._spots3d._spot_filter_params['min_spot_sep'][1],
+                features={"fit_stats": self._fit_strs},
+                text={'string': '{fit_stats}',
+                      'size': 10,
+                      'color': 'white'},
+                visible=True,
+                )
             
 
     def _save_spots(self):
