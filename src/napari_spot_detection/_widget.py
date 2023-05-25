@@ -37,11 +37,8 @@ import napari
 from pathlib import Path
 import sys
 
-if '/home/alexis/Postdoc_ASU/Projects/opm-merfish-analysis/src/' not in sys.path:
-    sys.path.append('/home/alexis/Postdoc_ASU/Projects/opm-merfish-analysis/src/')
-from SPOTS3D import SPOTS3D
-from _imageprocessing import deskew
-
+from opm_merfish_analysis.SPOTS3D import SPOTS3D
+from opm_merfish_analysis._imageprocessing import deskew
 
 
 class FullSlider(QWidget):
