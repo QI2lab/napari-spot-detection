@@ -1253,6 +1253,11 @@ class SpotDetection(QWidget):
                 json.dump(detection_parameters, write_file, indent=4)
 
 
+    def _update_slider(self, slider, mini, maxi):
+            slider.setRange(mini, maxi)
+            slider.setValue((mini, maxi)) 
+
+
     def _load_parameters(self):
 
         path_load = QFileDialog.getOpenFileName(self,"Load spots data","","JSON Files (*.json);;All Files (*)")[0]
@@ -1292,12 +1297,15 @@ class SpotDetection(QWidget):
             # self.txt_adapthist_y.setText(str(detection_parameters['']))
             # self.txt_adapthist_z.setText(str(detection_parameters['']))
             
-            self.sld_dog_sigma_x_factor.setValue((detection_parameters['DoG_filter_params']['sigma_small_x_factor'],
-                                                  detection_parameters['DoG_filter_params']['sigma_large_x_factor']))
-            self.sld_dog_sigma_y_factor.setValue((detection_parameters['DoG_filter_params']['sigma_small_y_factor'],
-                                                  detection_parameters['DoG_filter_params']['sigma_large_y_factor']))
-            self.sld_dog_sigma_z_factor.setValue((detection_parameters['DoG_filter_params']['sigma_small_z_factor'],
-                                                  detection_parameters['DoG_filter_params']['sigma_large_z_factor']))
+            self._update_slider(self.sld_dog_sigma_x_factor,
+                                detection_parameters['DoG_filter_params']['sigma_small_x_factor'],
+                                detection_parameters['DoG_filter_params']['sigma_large_x_factor'])
+            self._update_slider(self.sld_dog_sigma_y_factor,
+                                detection_parameters['DoG_filter_params']['sigma_small_y_factor'],
+                                detection_parameters['DoG_filter_params']['sigma_large_y_factor'])
+            self._update_slider(self.sld_dog_sigma_z_factor,
+                                detection_parameters['DoG_filter_params']['sigma_small_z_factor'],
+                                detection_parameters['DoG_filter_params']['sigma_large_z_factor'])
             self.sld_dog_thresh.setValue(detection_parameters['find_candidates_params']['threshold'])
             if detection_parameters['dog_filter_source_data'] == 'decon':
                 self.cbx_dog_choice.setCurrentIndex(0)
@@ -1311,15 +1319,19 @@ class SpotDetection(QWidget):
             self.txt_roi_y_factor.setText(str(detection_parameters['fit_candidate_spots_params']['roi_y_factor']))
             self.txt_roi_x_factor.setText(str(detection_parameters['fit_candidate_spots_params']['roi_x_factor']))
 
-            self.sld_filter_amplitude_range.setValue((detection_parameters['spot_filter_params']['amp_min'],
-                                                      detection_parameters['spot_filter_params']['amp_min'] * 500)) # amp max not considered actually
-            self.sld_filter_sigma_xy_factor.setValue((detection_parameters['spot_filter_params']['sigma_min_xy_factor'],
-                                                     detection_parameters['spot_filter_params']['sigma_max_xy_factor']))
-            self.sld_filter_sigma_z_factor.setValue((detection_parameters['spot_filter_params']['sigma_min_z_factor'],
-                                                    detection_parameters['spot_filter_params']['sigma_max_z_factor']))
+            self._update_slider(self.sld_filter_amplitude_range, 
+                                detection_parameters['spot_filter_params']['amp_min'], 
+                                detection_parameters['spot_filter_params']['amp_min'] + 1) # amp max not considered actually
+            self._update_slider(self.sld_filter_sigma_xy_factor,
+                                detection_parameters['spot_filter_params']['sigma_min_xy_factor'],
+                                detection_parameters['spot_filter_params']['sigma_max_xy_factor'])
+            self._update_slider(self.sld_filter_sigma_z_factor,
+                                detection_parameters['spot_filter_params']['sigma_min_z_factor'],
+                                detection_parameters['spot_filter_params']['sigma_max_z_factor'])
             try:
-                self.sld_filter_sigma_ratio_range.setValue((detection_parameters['spot_filter_params']['min_sigma_ratio'],
-                                                            detection_parameters['spot_filter_params']['max_sigma_ratio']))
+                self._update_slider(self.sld_filter_sigma_ratio_range,
+                                    detection_parameters['spot_filter_params']['min_sigma_ratio'],
+                                    detection_parameters['spot_filter_params']['max_sigma_ratio'])
             except:
                 print("There was no sigma_ratio boundaries defined")
             self.sld_fit_dist_max_err_z_factor.setValue(detection_parameters['spot_filter_params']['fit_dist_max_err_z_factor'])
