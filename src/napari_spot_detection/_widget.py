@@ -124,6 +124,13 @@ class SpotDetection(QWidget):
             'filter_spots': False,
         }
         
+        # For a 24GB GPU
+        # TODO: add option in GUI with textboxes
+        self.scan_chunk_size_deconv = 256
+        self.scan_chunk_size_dog = 128
+        self.scan_chunk_size_find_peaks = 128
+
+        
     def _create_gui(self):
         wdg = QWidget()
         wdg_layout = QVBoxLayout()
