@@ -113,7 +113,16 @@ class SpotDetection(QWidget):
         self.spot_wdg = self._create_gui()
         self._scroll.setWidget(self.spot_wdg)
         self.layout().addWidget(self._scroll)
-
+        
+        self.steps_performed = {
+            'load_psf': False,
+            'load_model': False,
+            'run_deconvolution': False,
+            'apply_DoG': False,
+            'find_peaks': False,
+            'fit_spots': False,
+            'filter_spots': False,
+        }
         
     def _create_gui(self):
         wdg = QWidget()
@@ -708,7 +717,8 @@ class SpotDetection(QWidget):
         if filename:
             self.psf = tifffile.imread(filename)
             self._psf_origin = filename
-            print("PSF loaded")
+            self.steps_performed['load_psf'] = True
+            print("PSF loaded:", filename)
 
 
     def _get_selected_image(self):
@@ -760,6 +770,9 @@ class SpotDetection(QWidget):
         It includes the image and parameters for analysis.
         Some paramaters will be updated by following steps. 
         """
+        if not self.steps_performed['load_psf']:
+            self._load_psf()
+        
         img, self.scale = self._get_selected_image()
         na, ri, wvl, dc, dstage, theta = self._get_phy_params()
         metadata = {'pixel_size' : dc,
@@ -775,21 +788,26 @@ class SpotDetection(QWidget):
             metadata= metadata,
             microscope_params=microscope_params,
             )
+        self.steps_performed['load_model'] = True
         print("model instanciated")
 
 
     def _run_deconvolution(self):
+        if not self.steps_performed['load_model']:
+            self._get_spot3d()
+        
         print("starting deconvolution")
         new_decon_params = {
             'iterations' : int(self.txt_deconv_iter.text()),
             'tv_tau' : float(self.txt_deconv_tvtau.text()),
         }
         self._spots3d.decon_params = new_decon_params
-        self._spots3d.scan_chunk_size = 128 # GPU out-of-memory on OPM PC if > 128
+        self._spots3d.scan_chunk_size = self.scan_chunk_size_deconv # GPU out-of-memory on OPM PC if > 128
         self._spots3d.run_deconvolution()
         print("finished deconvolution")
         self._add_image(data=self._spots3d.decon_data, name='deconv', scale=self.scale)
-
+        self.steps_performed['run_deconvolution'] = True
+    
     def _run_adaptive_histogram(self):
         print('Not implemented yet')
 
@@ -820,66 +838,68 @@ class SpotDetection(QWidget):
         """
         Apply a Differential of Gaussian filter on the first image available in Napari.
         """
-        if self._spots3d is None:
-            print("Setup the spot localization model first.")
+        if not self.steps_performed['run_deconvolution']:
+            self._run_deconvolution()
+
+        print("starting DoG filter")
+        if self.cbx_dog_choice.currentIndex() == 0:
+            self._spots3d.dog_filter_source_data = 'decon'
         else:
-            print("starting DoG filter")
-            if self.cbx_dog_choice.currentIndex() == 0:
-                self._spots3d.dog_filter_source_data = 'decon'
-            else:
-                self._spots3d.dog_filter_source_data = 'raw'
-            # add choice of chunk size in GUI?
-            self._spots3d.scan_chunk_size = 16 # GPU out-of-memory on OPM PC if > 64
-            self._spots3d.run_DoG_filter()
-            print("finished DoG filter")
-            self._add_image(
-                data=self._spots3d.dog_data, 
-                name='DoG', 
-                scale=self.scale,
-                # Remark: use _dog_data instead to get the Dask format?
-                contrast_limits=[0, self._spots3d.dog_data.max()],
-                )
+            self._spots3d.dog_filter_source_data = 'raw'
+        # add choice of chunk size in GUI?
+        self._spots3d.scan_chunk_size = self.scan_chunk_size_dog # GPU out-of-memory on OPM PC if > 64
+        self._spots3d.run_DoG_filter()
+        print("finished DoG filter")
+        self._add_image(
+            data=self._spots3d.dog_data, 
+            name='DoG', 
+            scale=self.scale,
+            # Remark: use _dog_data instead to get the Dask format?
+            contrast_limits=[0, self._spots3d.dog_data.max()],
+            )
+        self.steps_performed['apply_DoG'] = True
 
 
     def _find_peaks(self):
         """
         Threshold the image resulting from the DoG filter and detect peaks.
         """
-        if 'DoG' not in self.viewer.layers:
-            print("Run a DoG filter on an image first")
-        else:
-            print("starting find candidates")
-            self._spots3d.find_candidates_params = {
-                'threshold' : self.sld_dog_thresh.value(),
-                'min_spot_xy_factor' : self.sld_min_spot_xy_factor.value(),
-                'min_spot_z_factor' : self.sld_min_spot_z_factor.value(),
-                }
-            self._spots3d.scan_chunk_size = 64 # GPU timeout on OPM if > 64. Will change registry settings for TDM timeout.
-            self._spots3d.run_find_candidates()
-            print("finished find candidates")
+        if not self.steps_performed['apply_DoG']:
+            self._compute_dog()
 
-            # # used variables for gaussian fit if peaks are not merged
-            # self._peaks_merged = False
-            # self._use_centers = self._spots3d._spot_candidates
-            # self._use_amps = self._spots3d._amps
-            # print(self._spots3d._spot_candidates)
-            # print(self._spots3d._spot_candidates.shape) # debug
-        
-            theta = self._spots3d._image_params['theta'] 
-            if (theta > 0) and ('deskewed' not in self.viewer.layers):
-                pixel_size = self._spots3d._image_params['pixel_size'] 
-                scan_step = self._spots3d._image_params['scan_step'] 
-                # deskewed_data = deskew(np.array(self._spots3d._decon_data), pixel_size, scan_step, theta)
-                deskewed_data = deskew(self._spots3d.data, pixel_size, scan_step, theta)
-                self._add_image(deskewed_data, name='deskewed', scale=[pixel_size, pixel_size, pixel_size])
+        print("starting find candidates")
+        self._spots3d.find_candidates_params = {
+            'threshold' : self.sld_dog_thresh.value(),
+            'min_spot_xy_factor' : self.sld_min_spot_xy_factor.value(),
+            'min_spot_z_factor' : self.sld_min_spot_z_factor.value(),
+            }
+        self._spots3d.scan_chunk_size = self.scan_chunk_size_find_peaks # GPU timeout on OPM if > 64. Will change registry settings for TDM timeout.
+        self._spots3d.run_find_candidates()
+        print("finished find candidates")
 
-            self._add_points(
-                self._spots3d._spot_candidates[:, :3], 
-                name='local maxis',
-                blending='additive', 
-                size=0.25, 
-                face_color='r',
-                )
+        # # used variables for gaussian fit if peaks are not merged
+        # self._peaks_merged = False
+        # self._use_centers = self._spots3d._spot_candidates
+        # self._use_amps = self._spots3d._amps
+        # print(self._spots3d._spot_candidates)
+        # print(self._spots3d._spot_candidates.shape) # debug
+    
+        theta = self._spots3d._image_params['theta'] 
+        if (theta > 0) and ('deskewed' not in self.viewer.layers):
+            pixel_size = self._spots3d._image_params['pixel_size'] 
+            scan_step = self._spots3d._image_params['scan_step'] 
+            # deskewed_data = deskew(np.array(self._spots3d._decon_data), pixel_size, scan_step, theta)
+            deskewed_data = deskew(self._spots3d.data, pixel_size, scan_step, theta)
+            self._add_image(deskewed_data, name='deskewed', scale=[pixel_size, pixel_size, pixel_size])
+
+        self._add_points(
+            self._spots3d._spot_candidates[:, :3], 
+            name='local maxis',
+            blending='additive', 
+            size=0.25, 
+            face_color='r',
+            )
+        self.steps_performed['find_peaks'] = True
 
 
     def _merge_peaks(self):
@@ -911,6 +931,8 @@ class SpotDetection(QWidget):
         """
         Perform a gaussian fitting on each ROI.
         """
+        if not self.steps_performed['find_peaks']:
+            self._find_peaks()
 
         self._spots3d.fit_candidate_spots_params = {
             'n_spots_to_fit' : int(self.txt_n_spots_to_fit.text()),
@@ -923,8 +945,8 @@ class SpotDetection(QWidget):
         print("finished fit spots")
 
         self._centers = self._spots3d._fit_params[:, 3:0:-1]
-        self._add_points(self._centers, name='fitted spots', blending='additive', size=0.25, face_color='g')
         print(f"Fitted {len(self._spots3d._fit_params)} spots")
+        self._add_points(self._centers, name='fitted spots', blending='additive', size=0.25, face_color='g')
 
         # process all the results
         self._amplitudes = self._spots3d._fit_params[:, 0]
@@ -963,6 +985,7 @@ class SpotDetection(QWidget):
             # self.sld_dist_boundary_z_factor.setRange(np.percentile(self._dist_fit_xy, p_mini), np.percentile(self._dist_fit_xy, p_maxi))
             # self.sld_dist_boundary_xy_factor.setRange(np.percentile(self._dist_fit_z, p_mini), np.percentile(self._dist_fit_z, p_maxi))
             self.sld_filter_chi_squared.setRange(np.percentile(self._chi_squared, p_mini), np.percentile(self._chi_squared, p_maxi))
+        self.steps_performed['fit_spots'] = True
     
 
     def _plot_fitted_params(self):
@@ -970,41 +993,44 @@ class SpotDetection(QWidget):
         Generate distribution plots of fitted parameters to help selecting
         appropriate threshold values for spot filtering.
         """
+        
+        if not self.steps_performed['fit_spots']:
+            print("Perform spot fitting first.")
+        else:
+            p_mini = float(self.txt_filter_percentile_min.text())
+            p_maxi = float(self.txt_filter_percentile_max.text())
 
-        p_mini = float(self.txt_filter_percentile_min.text())
-        p_maxi = float(self.txt_filter_percentile_max.text())
+            plt.figure()
+            plt.hist(self._amplitudes, bins='auto', range=[self.sld_filter_amplitude_range.value()[0],
+                                                        self.sld_filter_amplitude_range.value()[1]])
+            plt.title("Distribution of amplitude values")
 
-        plt.figure()
-        plt.hist(self._amplitudes, bins='auto', range=[self.sld_filter_amplitude_range.value()[0],
-                                                       self.sld_filter_amplitude_range.value()[1]])
-        plt.title("Distribution of amplitude values")
+            plt.figure()
+            plt.hist(self._sigmas_xy_factors, bins='auto', range=self.sld_filter_sigma_xy_factor.value())
+            plt.title("Distribution of sigmas_xy factors")
 
-        plt.figure()
-        plt.hist(self._sigmas_xy_factors, bins='auto', range=self.sld_filter_sigma_xy_factor.value())
-        plt.title("Distribution of sigmas_xy factors")
+            plt.figure()
+            plt.hist(self._sigmas_z_factors, bins='auto', range=self.sld_filter_sigma_z_factor.value())
+            plt.title("Distribution of sigmas_z factors")
 
-        plt.figure()
-        plt.hist(self._sigmas_z_factors, bins='auto', range=self.sld_filter_sigma_z_factor.value())
-        plt.title("Distribution of sigmas_z factors")
+            plt.figure()
+            plt.hist(self._sigma_ratios, bins='auto', range=self.sld_filter_sigma_ratio_range.value())
+            plt.title("Distribution of sigma_ratios values")
 
-        plt.figure()
-        plt.hist(self._sigma_ratios, bins='auto', range=self.sld_filter_sigma_ratio_range.value())
-        plt.title("Distribution of sigma_ratios values")
+            plt.figure()
+            plt.hist(self._chi_squared, bins='auto', range=(np.percentile(self._chi_squared, p_mini), 
+                                                            np.percentile(self._chi_squared, p_maxi)))
+            plt.title("Distribution of chi_squared values")
 
-        plt.figure()
-        plt.hist(self._chi_squared, bins='auto', range=(np.percentile(self._chi_squared, p_mini), 
-                                                        np.percentile(self._chi_squared, p_maxi)))
-        plt.title("Distribution of chi_squared values")
+            plt.figure()
+            plt.hist(self._dist_fit_xy_factors, bins='auto', range=(0, 8))
+            plt.title("Distribution of dist_fit_xy factors")
 
-        plt.figure()
-        plt.hist(self._dist_fit_xy_factors, bins='auto', range=(0, 8))
-        plt.title("Distribution of dist_fit_xy factors")
+            plt.figure()
+            plt.hist(self._dist_fit_z_factors, bins='auto', range=(0, 8))
+            plt.title("Distribution of dist_fit_z factors")
 
-        plt.figure()
-        plt.hist(self._dist_fit_z_factors, bins='auto', range=(0, 8))
-        plt.title("Distribution of dist_fit_z factors")
-
-        plt.show()
+            plt.show()
     
 
     def _plot_fitted_params_2D(self):
@@ -1013,52 +1039,58 @@ class SpotDetection(QWidget):
         appropriate threshold values for spot filtering.
         """
 
-        p_mini = float(self.txt_filter_percentile_min.text())
-        p_maxi = float(self.txt_filter_percentile_max.text())
+        if not self.steps_performed['fit_spots']:
+            print("Perform spot fitting first.")
+        else:
+            p_mini = float(self.txt_filter_percentile_min.text())
+            p_maxi = float(self.txt_filter_percentile_max.text())
 
-        distrib = {
-            'amplitudes': {'data': self._amplitudes, 
-                           'range': self.sld_filter_amplitude_range.value()},
-            'sigmas_xy_factors': {'data': self._sigmas_xy_factors, 
-                                  'range': self.sld_filter_sigma_xy_factor.value()},
-            'sigmas_z_factors': {'data': self._sigmas_z_factors, 
-                                 'range': self.sld_filter_sigma_z_factor.value()},
-            'sigma_ratios': {'data': self._sigma_ratios, 
-                             'range': self.sld_filter_sigma_ratio_range.value()},
-            'chi_squared': {'data': self._chi_squared, 
-                            'range': (np.percentile(self._chi_squared, p_mini), 
-                                      np.percentile(self._chi_squared, p_maxi))},
-            'dist_fit_xy_factors': {'data': self._dist_fit_xy_factors, 
-                                    'range': (np.percentile(self._dist_fit_xy_factors, p_mini), 
-                                              np.percentile(self._dist_fit_xy_factors, p_maxi))},
-            'dist_fit_z_factors': {'data': self._dist_fit_z_factors, 
-                                   'range': (np.percentile(self._dist_fit_z_factors, p_mini), 
-                                             np.percentile(self._dist_fit_z_factors, p_maxi))},
-        }
-        
-        var_labels = list(distrib.keys())
-        var_combi = itertools.combinations(var_labels, 2)
-        for var_x, var_y in var_combi:
-            x_mini, x_maxi = distrib[var_x]['range']
-            y_mini, y_maxi = distrib[var_y]['range']
-            x_select = np.logical_and(distrib[var_x]['data'] >= x_mini, distrib[var_x]['data'] <= x_maxi)
-            y_select = np.logical_and(distrib[var_y]['data'] >= y_mini, distrib[var_y]['data'] <= y_maxi)
-            select = np.logical_and(x_select, y_select)
-            x_data = distrib[var_x]['data'][select]
-            y_data = distrib[var_y]['data'][select]
+            distrib = {
+                'amplitudes': {'data': self._amplitudes, 
+                            'range': self.sld_filter_amplitude_range.value()},
+                'sigmas_xy_factors': {'data': self._sigmas_xy_factors, 
+                                    'range': self.sld_filter_sigma_xy_factor.value()},
+                'sigmas_z_factors': {'data': self._sigmas_z_factors, 
+                                    'range': self.sld_filter_sigma_z_factor.value()},
+                'sigma_ratios': {'data': self._sigma_ratios, 
+                                'range': self.sld_filter_sigma_ratio_range.value()},
+                'chi_squared': {'data': self._chi_squared, 
+                                'range': (np.percentile(self._chi_squared, p_mini), 
+                                        np.percentile(self._chi_squared, p_maxi))},
+                'dist_fit_xy_factors': {'data': self._dist_fit_xy_factors, 
+                                        'range': (np.percentile(self._dist_fit_xy_factors, p_mini), 
+                                                np.percentile(self._dist_fit_xy_factors, p_maxi))},
+                'dist_fit_z_factors': {'data': self._dist_fit_z_factors, 
+                                    'range': (np.percentile(self._dist_fit_z_factors, p_mini), 
+                                                np.percentile(self._dist_fit_z_factors, p_maxi))},
+            }
+            
+            var_labels = list(distrib.keys())
+            var_combi = itertools.combinations(var_labels, 2)
+            for var_x, var_y in var_combi:
+                x_mini, x_maxi = distrib[var_x]['range']
+                y_mini, y_maxi = distrib[var_y]['range']
+                x_select = np.logical_and(distrib[var_x]['data'] >= x_mini, distrib[var_x]['data'] <= x_maxi)
+                y_select = np.logical_and(distrib[var_y]['data'] >= y_mini, distrib[var_y]['data'] <= y_maxi)
+                select = np.logical_and(x_select, y_select)
+                x_data = distrib[var_x]['data'][select]
+                y_data = distrib[var_y]['data'][select]
 
-            plt.figure()
-            plt.scatter(x_data, y_data, s=10, marker='.', c='b', alpha=0.5)
-            plt.title(f"Distributions of {var_x} and {var_y}")
-            plt.xlabel(var_x)
-            plt.ylabel(var_y)
-            plt.show()
+                plt.figure()
+                plt.scatter(x_data, y_data, s=10, marker='.', c='b', alpha=0.5)
+                plt.title(f"Distributions of {var_x} and {var_y}")
+                plt.xlabel(var_x)
+                plt.ylabel(var_y)
+                plt.show()
 
 
     def _filter_spots(self):
         """
         Filter out spots based on gaussian fit results.
         """
+        
+        if not self.steps_performed['fit_spots']:
+            self._fit_spots()
 
         # list of boolean filters for all spots thresholds
         selectors = []
@@ -1088,78 +1120,79 @@ class SpotDetection(QWidget):
         nb_kept = self._spots3d._to_keep.sum()
         print(f"Selected {nb_kept} spots out of {len(self._spots3d._to_keep)} candidates")
         self._add_points(self._centers_fit_masked, name='filtered spots', blending='additive', size=0.25, face_color='b')
-
+        self.steps_performed['filter_spots'] = True
+        
         
     def _inspect_filtering(self):
 
-        if self._centers_fit_masked is None:
-            print("Filter fitted spots first.")
-        else:
-            # condition_beads is the nfits x nfilters array telling which spots failed
-            # init_params_beads is the nfits x nparameters array of initial parameters
+        if not self.steps_performed['filter_spots']:
+            self._fit_spots()
 
-            condition_names = self._spots3d._condition_names
-            conditions_beads = self._spots3d._conditions
-            to_keep_beads = self._spots3d._to_keep
-            init_params_beads = self._spots3d._spot_candidates[:, :3]
-            roi_inds = np.arange(len(to_keep_beads))
+        # condition_beads is the nfits x nfilters array telling which spots failed
+        # init_params_beads is the nfits x nparameters array of initial parameters
 
-            strs = ["\n".join([condition_names[aa] for aa, c in enumerate(cs) if not c])
-            for ii, cs in enumerate(conditions_beads) if not to_keep_beads[ii]]
+        condition_names = self._spots3d._condition_names
+        conditions_beads = self._spots3d._conditions
+        to_keep_beads = self._spots3d._to_keep
+        init_params_beads = self._spots3d._spot_candidates[:, :3]
+        roi_inds = np.arange(len(to_keep_beads))
 
-            centers_init_beads = init_params_beads#[:, (3, 2, 1)]
-            cs = centers_init_beads[np.logical_not(to_keep_beads)]
+        strs = ["\n".join([condition_names[aa] for aa, c in enumerate(cs) if not c])
+        for ii, cs in enumerate(conditions_beads) if not to_keep_beads[ii]]
 
-            # TODO: fix orientation between raw and deskewed data
-            self._add_points(
-                cs,
-                symbol="disc",
-                name="centers rejected",
-                out_of_slice_display=False,
-                opacity=1,
-                face_color=[0, 0, 0, 0],
-                edge_color=[0, 1, 0, 1],
-                size=self._spots3d._spot_filter_params['min_spot_sep'][1],
-                features={"rejection_reason": strs},
-                text={'string': '{rejection_reason}',
-                      'size': 10,
-                      'color': 'white',
-                      },
+        centers_init_beads = init_params_beads#[:, (3, 2, 1)]
+        cs = centers_init_beads[np.logical_not(to_keep_beads)]
+
+        # TODO: fix orientation between raw and deskewed data
+        self._add_points(
+            cs,
+            symbol="disc",
+            name="centers rejected",
+            out_of_slice_display=False,
+            opacity=1,
+            face_color=[0, 0, 0, 0],
+            edge_color=[0, 1, 0, 1],
+            size=self._spots3d._spot_filter_params['min_spot_sep'][1],
+            features={"rejection_reason": strs},
+            text={'string': '{rejection_reason}',
+                    'size': 10,
+                    'color': 'white',
+                    },
             )
         
     def _show_filter_values(self):
 
-        if self._centers_fit_masked is None:
-            print("Filter fitted spots first.")
-        else:
-            filter_values = self._spots3d._filter_values.copy()
-            filter_names = list(self._spots3d._filter_names)
+        if not self.steps_performed['filter_spots']:
+            self._fit_spots()
 
-            # rescale sigma-based statistics to a ratio from theoritical sigma xy and z
-            filter_values[:, 1] = filter_values[:, 1] / self._spots3d._sigma_xy
-            filter_values[:, 2] = filter_values[:, 2] / self._spots3d._sigma_z
-            filter_names[1] = filter_names[1] + ' factor'
-            filter_names[2] = filter_names[2] + ' factor'
+        filter_values = self._spots3d._filter_values.copy()
+        filter_names = list(self._spots3d._filter_names)
 
-            if self._fit_strs is None:
-                self._fit_strs = ["\n".join([f'{col}: {val:.2f}' for col, val in zip(filter_names, filter_row)])
-                                  for filter_row in filter_values]
+        # rescale sigma-based statistics to a ratio from theoritical sigma xy and z
+        filter_values[:, 1] = filter_values[:, 1] / self._spots3d._sigma_xy
+        filter_values[:, 2] = filter_values[:, 2] / self._spots3d._sigma_z
+        filter_names[1] = filter_names[1] + ' factor'
+        filter_names[2] = filter_names[2] + ' factor'
 
-            self._add_points(
-                self._centers,
-                symbol="disc",
-                name="filter statistics",
-                out_of_slice_display=False,
-                opacity=1,
-                face_color=[0, 0, 0, 0],
-                edge_color=[0, 0, 0, 0],
-                size=self._spots3d._spot_filter_params['min_spot_sep'][1],
-                features={"fit_stats": self._fit_strs},
-                text={'string': '{fit_stats}',
-                      'size': 10,
-                      'color': 'white'},
-                visible=True,
-                )
+        if self._fit_strs is None:
+            self._fit_strs = ["\n".join([f'{col}: {val:.2f}' for col, val in zip(filter_names, filter_row)])
+                                for filter_row in filter_values]
+
+        self._add_points(
+            self._centers,
+            symbol="disc",
+            name="filter statistics",
+            out_of_slice_display=False,
+            opacity=1,
+            face_color=[0, 0, 0, 0],
+            edge_color=[0, 0, 0, 0],
+            size=self._spots3d._spot_filter_params['min_spot_sep'][1],
+            features={"fit_stats": self._fit_strs},
+            text={'string': '{fit_stats}',
+                    'size': 10,
+                    'color': 'white'},
+            visible=True,
+            )
             
 
     def _save_spots(self):
@@ -1288,6 +1321,7 @@ class SpotDetection(QWidget):
                     self.psf = tifffile.imread(detection_parameters['psf_origin'])
                     self._psf_origin = detection_parameters['psf_origin']
                     print("PSF loaded from", self._psf_origin)
+                    self.steps_performed['load_psf'] = True
                 except FileNotFoundError:
                     print("PSF couldn't be loaded because file was not found at", detection_parameters['psf_origin'])
             
