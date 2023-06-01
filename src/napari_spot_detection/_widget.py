@@ -1219,7 +1219,7 @@ class SpotDetection(QWidget):
                     'chi_squareds': self._chi_squared,
                     'dist_fit_xy': self._dist_fit_xy,
                     'dist_fit_z': self._dist_fit_z,
-                    'spot_select': self._spot_select,
+                    'select': self._spot_select,
                 })
             else:
                 df_spots = pd.DataFrame({
@@ -1232,7 +1232,7 @@ class SpotDetection(QWidget):
                     'chi_squareds': self._chi_squared,
                     'dist_fit_xy': self._dist_fit_xy,
                     'dist_fit_z': self._dist_fit_z,
-                    'spot_select': self._spot_select,
+                    'select': self._spot_select,
                 })
 
             path_save = QFileDialog.getSaveFileName(self, 'Export spots data')[0]
@@ -1252,7 +1252,7 @@ class SpotDetection(QWidget):
             self._offsets = df_spots['offsets']
             self._chi_squareds = df_spots['chi_squareds']
             self._dist_center = df_spots['dist_center']
-            self._spot_select = df_spots['spot_select']
+            self._spot_select = df_spots['select']
             if 'z' in df_spots.columns:
                 self._centers = np.zeros((len(df_spots['x']), 3))
                 self._centers[:, 0] = df_spots['z']
@@ -1391,7 +1391,7 @@ if __name__ == "__main__":
     napari.run()
 
 # TODO:
-#   - all functions compatible with 2D data
+#   - export as parquet with localized spots, candidates, filter values and filter conditions
 #   - add raw estimation of spots parameters by drawing box around one spot and estimating (fitting gaussian?) parameters
 #   - add check on individual ROIs
 #   - add panel to select data from big images, random tile, specific channel, etc...
