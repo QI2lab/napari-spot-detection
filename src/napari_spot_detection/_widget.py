@@ -981,17 +981,17 @@ class SpotDetection(QWidget):
         p_mini = float(self.txt_filter_percentile_min.text())
         p_maxi = float(self.txt_filter_percentile_max.text())
         if self.auto_params:
-            self.sld_filter_amplitude_range.setRange(max(0, np.percentile(self._amplitudes, p_mini)), np.percentile(self._amplitudes, p_maxi))
+            self.sld_filter_amplitude_range.setRange(max(0, np.nanpercentile(self._amplitudes, p_mini)), np.nanpercentile(self._amplitudes, p_maxi))
             self.sld_filter_sigma_xy_factor.setRange(0, 10)
             self.sld_filter_sigma_z_factor.setRange(0, 10)
             self.sld_filter_sigma_ratio_range.setRange(0, 10)
-            self.sld_fit_dist_max_err_z_factor.setRange(np.percentile(self._dist_fit_z_factors, p_mini), np.percentile(self._dist_fit_z_factors, p_maxi))
-            self.sld_fit_dist_max_err_xy_factor.setRange(np.percentile(self._dist_fit_xy_factors, p_mini), np.percentile(self._dist_fit_xy_factors, p_maxi))
-            # self.sld_min_spot_sep_z_factor.setRange(np.percentile(self._dist_fit_xy, p_mini), np.percentile(self._dist_fit_xy, p_maxi))
-            # self.sld_min_spot_sep_xy_factor.setRange(np.percentile(self._dist_fit_z, p_mini), np.percentile(self._dist_fit_z, p_maxi))
-            # self.sld_dist_boundary_z_factor.setRange(np.percentile(self._dist_fit_xy, p_mini), np.percentile(self._dist_fit_xy, p_maxi))
-            # self.sld_dist_boundary_xy_factor.setRange(np.percentile(self._dist_fit_z, p_mini), np.percentile(self._dist_fit_z, p_maxi))
-            self.sld_filter_chi_squared.setRange(np.percentile(self._chi_squared, p_mini), np.percentile(self._chi_squared, p_maxi))
+            self.sld_fit_dist_max_err_z_factor.setRange(np.nanpercentile(self._dist_fit_z_factors, p_mini), np.nanpercentile(self._dist_fit_z_factors, p_maxi))
+            self.sld_fit_dist_max_err_xy_factor.setRange(np.nanpercentile(self._dist_fit_xy_factors, p_mini), np.nanpercentile(self._dist_fit_xy_factors, p_maxi))
+            # self.sld_min_spot_sep_z_factor.setRange(np.nanpercentile(self._dist_fit_xy, p_mini), np.nanpercentile(self._dist_fit_xy, p_maxi))
+            # self.sld_min_spot_sep_xy_factor.setRange(np.nanpercentile(self._dist_fit_z, p_mini), np.nanpercentile(self._dist_fit_z, p_maxi))
+            # self.sld_dist_boundary_z_factor.setRange(np.nanpercentile(self._dist_fit_xy, p_mini), np.nanpercentile(self._dist_fit_xy, p_maxi))
+            # self.sld_dist_boundary_xy_factor.setRange(np.nanpercentile(self._dist_fit_z, p_mini), np.nanpercentile(self._dist_fit_z, p_maxi))
+            self.sld_filter_chi_squared.setRange(np.nanpercentile(self._chi_squared, p_mini), np.nanpercentile(self._chi_squared, p_maxi))
         self.steps_performed['fit_spots'] = True
     
 
@@ -1009,7 +1009,7 @@ class SpotDetection(QWidget):
 
             plt.figure()
             plt.hist(self._amplitudes, bins='auto', range=[self.sld_filter_amplitude_range.value()[0],
-                                                        self.sld_filter_amplitude_range.value()[1]])
+                                                           self.sld_filter_amplitude_range.value()[1]])
             plt.title("Distribution of amplitude values")
 
             plt.figure()
@@ -1025,8 +1025,8 @@ class SpotDetection(QWidget):
             plt.title("Distribution of sigma_ratios values")
 
             plt.figure()
-            plt.hist(self._chi_squared, bins='auto', range=(np.percentile(self._chi_squared, p_mini), 
-                                                            np.percentile(self._chi_squared, p_maxi)))
+            plt.hist(self._chi_squared, bins='auto', range=(np.nanpercentile(self._chi_squared, p_mini), 
+                                                            np.nanpercentile(self._chi_squared, p_maxi)))
             plt.title("Distribution of chi_squared values")
 
             plt.figure()
@@ -1062,14 +1062,14 @@ class SpotDetection(QWidget):
                 'sigma_ratios': {'data': self._sigma_ratios, 
                                 'range': self.sld_filter_sigma_ratio_range.value()},
                 'chi_squared': {'data': self._chi_squared, 
-                                'range': (np.percentile(self._chi_squared, p_mini), 
-                                        np.percentile(self._chi_squared, p_maxi))},
+                                'range': (np.nanpercentile(self._chi_squared, p_mini), 
+                                        np.nanpercentile(self._chi_squared, p_maxi))},
                 'dist_fit_xy_factors': {'data': self._dist_fit_xy_factors, 
-                                        'range': (np.percentile(self._dist_fit_xy_factors, p_mini), 
-                                                np.percentile(self._dist_fit_xy_factors, p_maxi))},
+                                        'range': (np.nanpercentile(self._dist_fit_xy_factors, p_mini), 
+                                                np.nanpercentile(self._dist_fit_xy_factors, p_maxi))},
                 'dist_fit_z_factors': {'data': self._dist_fit_z_factors, 
-                                    'range': (np.percentile(self._dist_fit_z_factors, p_mini), 
-                                                np.percentile(self._dist_fit_z_factors, p_maxi))},
+                                    'range': (np.nanpercentile(self._dist_fit_z_factors, p_mini), 
+                                                np.nanpercentile(self._dist_fit_z_factors, p_maxi))},
             }
             
             var_labels = list(distrib.keys())
@@ -1250,8 +1250,9 @@ class SpotDetection(QWidget):
             self._amplitudes = df_spots['amplitudes']
             self._sigmas_xy = df_spots['sigmas_xy']
             self._offsets = df_spots['offsets']
-            self._chi_squareds = df_spots['chi_squareds']
-            self._dist_center = df_spots['dist_center']
+            self._chi_squared = df_spots['chi_squareds']
+            self._dist_fit_xy = df_spots['dist_fit_xy']
+            self._dist_fit_z = df_spots['dist_fit_z']
             self._spot_select = df_spots['select']
             if 'z' in df_spots.columns:
                 self._centers = np.zeros((len(df_spots['x']), 3))
