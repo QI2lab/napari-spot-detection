@@ -129,6 +129,9 @@ class SpotDetection(QWidget):
         self.scan_chunk_size_deconv = 256
         self.scan_chunk_size_dog = 128
         self.scan_chunk_size_find_peaks = 128
+        
+        self.show_deskewed_deconv = True
+        self.show_deskewed_dog = True
 
         
     def _create_gui(self):
@@ -341,18 +344,21 @@ class SpotDetection(QWidget):
         self.but_auto_sigmas.setText('Auto sigmas')
         self.but_auto_sigmas.clicked.connect(self._make_sigmas_factors)
         # DoG blob detection widgets
-        self.lab_dog_sigma_x_factor = QLabel('sigma DoG x factor')
-        self.sld_dog_sigma_x_factor = QLabeledDoubleRangeSlider(Qt.Orientation.Horizontal)
-        self.sld_dog_sigma_x_factor.setRange(0, 8)
-        self.sld_dog_sigma_x_factor.setValue([0.5, 5])
-        self.lab_dog_sigma_y_factor = QLabel('sigma DoG y factor')
-        self.sld_dog_sigma_y_factor = QLabeledDoubleRangeSlider(Qt.Orientation.Horizontal)
-        self.sld_dog_sigma_y_factor.setRange(0, 8)
-        self.sld_dog_sigma_y_factor.setValue([0.5, 5])
         self.lab_dog_sigma_z_factor = QLabel('sigma DoG z factor')
-        self.sld_dog_sigma_z_factor = QLabeledDoubleRangeSlider(Qt.Orientation.Horizontal)
-        self.sld_dog_sigma_z_factor.setRange(0, 8)
-        self.sld_dog_sigma_z_factor.setValue([0.5, 5])
+        self.txt_dog_sigma_small_z_factor = QLineEdit()
+        self.txt_dog_sigma_small_z_factor.setText('0.5')
+        self.txt_dog_sigma_large_z_factor = QLineEdit()
+        self.txt_dog_sigma_large_z_factor.setText('5')
+        self.lab_dog_sigma_y_factor = QLabel('sigma DoG y factor')
+        self.txt_dog_sigma_small_y_factor = QLineEdit()
+        self.txt_dog_sigma_small_y_factor.setText('0.5')
+        self.txt_dog_sigma_large_y_factor = QLineEdit()
+        self.txt_dog_sigma_large_y_factor.setText('5')
+        self.lab_dog_sigma_x_factor = QLabel('sigma DoG x factor')
+        self.txt_dog_sigma_small_x_factor = QLineEdit()
+        self.txt_dog_sigma_small_x_factor.setText('0.5')
+        self.txt_dog_sigma_large_x_factor = QLineEdit()
+        self.txt_dog_sigma_large_x_factor.setText('5')
         # self.sld_dog_thresh = FullSlider(range=(0.1, 20), step=0.1, label="Blob threshold")
         self.lab_dog_thresh = QLabel('DoG threshold')
         self.sld_dog_thresh = QLabeledDoubleSlider(Qt.Orientation.Horizontal)
@@ -393,18 +399,21 @@ class SpotDetection(QWidget):
         dogLayout_sigmas.addWidget(self.lab_sigma_ratio)
         dogLayout_sigmas.addWidget(self.txt_sigma_ratio)
         group_layout.addLayout(dogLayout_sigmas)
-        dogLayout_sigmas_x_factors = QHBoxLayout()
-        dogLayout_sigmas_x_factors.addWidget(self.lab_dog_sigma_x_factor)
-        dogLayout_sigmas_x_factors.addWidget(self.sld_dog_sigma_x_factor)
-        dogLayout_sigmas_y_factors = QHBoxLayout()
-        dogLayout_sigmas_y_factors.addWidget(self.lab_dog_sigma_y_factor)
-        dogLayout_sigmas_y_factors.addWidget(self.sld_dog_sigma_y_factor)
         dogLayout_sigmas_z_factors = QHBoxLayout()
         dogLayout_sigmas_z_factors.addWidget(self.lab_dog_sigma_z_factor)
-        dogLayout_sigmas_z_factors.addWidget(self.sld_dog_sigma_z_factor)
-        group_layout.addLayout(dogLayout_sigmas_x_factors)
-        group_layout.addLayout(dogLayout_sigmas_y_factors)
+        dogLayout_sigmas_z_factors.addWidget(self.txt_dog_sigma_small_z_factor)
+        dogLayout_sigmas_z_factors.addWidget(self.txt_dog_sigma_large_z_factor)
+        dogLayout_sigmas_y_factors = QHBoxLayout()
+        dogLayout_sigmas_y_factors.addWidget(self.lab_dog_sigma_y_factor)
+        dogLayout_sigmas_y_factors.addWidget(self.txt_dog_sigma_small_y_factor)
+        dogLayout_sigmas_y_factors.addWidget(self.txt_dog_sigma_large_y_factor)
+        dogLayout_sigmas_x_factors = QHBoxLayout()
+        dogLayout_sigmas_x_factors.addWidget(self.lab_dog_sigma_x_factor)
+        dogLayout_sigmas_x_factors.addWidget(self.txt_dog_sigma_small_x_factor)
+        dogLayout_sigmas_x_factors.addWidget(self.txt_dog_sigma_large_x_factor)
         group_layout.addLayout(dogLayout_sigmas_z_factors)
+        group_layout.addLayout(dogLayout_sigmas_y_factors)
+        group_layout.addLayout(dogLayout_sigmas_x_factors)
         dogLayout_dog_choice = QHBoxLayout()
         dogLayout_dog_choice.addWidget(self.lab_dog_choice)
         dogLayout_dog_choice.addWidget(self.cbx_dog_choice)
@@ -832,14 +841,14 @@ class SpotDetection(QWidget):
                              'sigma_large_z_factor' : 1 * sigma_ratio**(1/2)} 
         self._spots3d.DoG_filter_params = DoG_filter_params
         
+        self.txt_dog_sigma_small_z_factor.setText(str(DoG_filter_params['sigma_small_z_factor']))
+        self.txt_dog_sigma_large_z_factor.setText(str(DoG_filter_params['sigma_large_z_factor']))
+        self.txt_dog_sigma_small_y_factor.setText(str(DoG_filter_params['sigma_small_y_factor']))
+        self.txt_dog_sigma_large_y_factor.setText(str(DoG_filter_params['sigma_large_y_factor']))
+        self.txt_dog_sigma_small_x_factor.setText(str(DoG_filter_params['sigma_small_x_factor']))
+        self.txt_dog_sigma_large_x_factor.setText(str(DoG_filter_params['sigma_large_x_factor']))
+        # self.sld_dog_sigma_x_factor
         
-        self.sld_dog_sigma_x_factor.setValue([DoG_filter_params['sigma_small_x_factor'],
-                                              DoG_filter_params['sigma_large_x_factor']])
-        self.sld_dog_sigma_y_factor.setValue([DoG_filter_params['sigma_small_y_factor'],
-                                              DoG_filter_params['sigma_large_y_factor']])
-        self.sld_dog_sigma_z_factor.setValue([DoG_filter_params['sigma_small_z_factor'],
-                                              DoG_filter_params['sigma_large_z_factor']])
-
 
     def _compute_dog(self):
         """
@@ -853,6 +862,15 @@ class SpotDetection(QWidget):
             self._spots3d.dog_filter_source_data = 'decon'
         else:
             self._spots3d.dog_filter_source_data = 'raw'
+        new_dog_params = {
+            'sigma_small_z_factor' : float(self.txt_dog_sigma_small_z_factor.text()),
+            'sigma_large_z_factor' : float(self.txt_dog_sigma_large_z_factor.text()),
+            'sigma_small_y_factor' : float(self.txt_dog_sigma_small_y_factor.text()),
+            'sigma_large_y_factor' : float(self.txt_dog_sigma_large_y_factor.text()),
+            'sigma_small_x_factor' : float(self.txt_dog_sigma_small_x_factor.text()),
+            'sigma_large_x_factor' : float(self.txt_dog_sigma_large_x_factor.text()),
+        }
+        self._spots3d.DoG_filter_params = new_dog_params
         # add choice of chunk size in GUI?
         self._spots3d.scan_chunk_size = self.scan_chunk_size_dog # GPU out-of-memory on OPM PC if > 64
         self._spots3d.run_DoG_filter()
@@ -895,9 +913,23 @@ class SpotDetection(QWidget):
         if (theta > 0) and ('deskewed' not in self.viewer.layers):
             pixel_size = self._spots3d._image_params['pixel_size'] 
             scan_step = self._spots3d._image_params['scan_step'] 
-            # deskewed_data = deskew(np.array(self._spots3d._decon_data), pixel_size, scan_step, theta)
-            deskewed_data = deskew(self._spots3d.data, pixel_size, scan_step, theta)
-            self._add_image(deskewed_data, name='deskewed', scale=[pixel_size, pixel_size, pixel_size])
+            print("Deskewing raw image")
+            self._add_image(
+                deskew(self._spots3d.data, pixel_size, scan_step, theta), 
+                name='deskewed', 
+                scale=[pixel_size, pixel_size, pixel_size])
+            if self.show_deskewed_deconv:
+                print("Deskewing deconvolved image")
+                self._add_image(
+                    deskew(self._spots3d.decon_data, pixel_size, scan_step, theta), 
+                    name='deskewed deconv', 
+                    scale=[pixel_size, pixel_size, pixel_size])
+            if self.show_deskewed_dog:
+                print("Deskewing DoG image")
+                self._add_image(
+                    deskew(self._spots3d.dog_data, pixel_size, scan_step, theta), 
+                    name='deskewed DoG', 
+                    scale=[pixel_size, pixel_size, pixel_size])
 
         self._add_points(
             self._spots3d._spot_candidates[:, :3], 
@@ -1338,16 +1370,14 @@ class SpotDetection(QWidget):
             # self.txt_adapthist_x.setText(str(detection_parameters['']))  # not implemented yet
             # self.txt_adapthist_y.setText(str(detection_parameters['']))
             # self.txt_adapthist_z.setText(str(detection_parameters['']))
+                    
+            self.txt_dog_sigma_small_z_factor.setText(str(detection_parameters['DoG_filter_params']['sigma_small_z_factor']))
+            self.txt_dog_sigma_large_z_factor.setText(str(detection_parameters['DoG_filter_params']['sigma_large_z_factor']))
+            self.txt_dog_sigma_small_y_factor.setText(str(detection_parameters['DoG_filter_params']['sigma_small_y_factor']))
+            self.txt_dog_sigma_large_y_factor.setText(str(detection_parameters['DoG_filter_params']['sigma_large_y_factor']))
+            self.txt_dog_sigma_small_x_factor.setText(str(detection_parameters['DoG_filter_params']['sigma_small_x_factor']))
+            self.txt_dog_sigma_large_x_factor.setText(str(detection_parameters['DoG_filter_params']['sigma_large_x_factor']))
             
-            self._update_slider(self.sld_dog_sigma_x_factor,
-                                detection_parameters['DoG_filter_params']['sigma_small_x_factor'],
-                                detection_parameters['DoG_filter_params']['sigma_large_x_factor'])
-            self._update_slider(self.sld_dog_sigma_y_factor,
-                                detection_parameters['DoG_filter_params']['sigma_small_y_factor'],
-                                detection_parameters['DoG_filter_params']['sigma_large_y_factor'])
-            self._update_slider(self.sld_dog_sigma_z_factor,
-                                detection_parameters['DoG_filter_params']['sigma_small_z_factor'],
-                                detection_parameters['DoG_filter_params']['sigma_large_z_factor'])
             self.sld_dog_thresh.setValue(detection_parameters['find_candidates_params']['threshold'])
             if detection_parameters['dog_filter_source_data'] == 'decon':
                 self.cbx_dog_choice.setCurrentIndex(0)
