@@ -40,6 +40,8 @@ import sys
 from opm_merfish_analysis.SPOTS3D import SPOTS3D
 from opm_merfish_analysis._imageprocessing import deskew
 
+DEBUG = True
+
 
 class FullSlider(QWidget):
     """
@@ -823,6 +825,10 @@ class SpotDetection(QWidget):
         print("finished deconvolution")
         self._add_image(data=self._spots3d.decon_data, name='deconv', scale=self.scale)
         self.steps_performed['run_deconvolution'] = True
+        if DEBUG:
+            print("In _run_deconvolution:")
+            print("_spots3d.decon_params:", self._spots3d.decon_params)
+        
     
     def _run_adaptive_histogram(self):
         print('Not implemented yet')
@@ -883,6 +889,9 @@ class SpotDetection(QWidget):
             contrast_limits=[0, self._spots3d.dog_data.max()],
             )
         self.steps_performed['apply_DoG'] = True
+        if DEBUG:
+            print("In _compute_dog:")
+            print("_spots3d.DoG_filter_params:", self._spots3d.DoG_filter_params)
 
 
     def _find_peaks(self):
@@ -901,6 +910,9 @@ class SpotDetection(QWidget):
         self._spots3d.scan_chunk_size = self.scan_chunk_size_find_peaks # GPU timeout on OPM if > 64. Will change registry settings for TDM timeout.
         self._spots3d.run_find_candidates()
         print("finished find candidates")
+        if DEBUG:
+            print("In _find_peaks:")
+            print("_spots3d.find_candidates_params:", self._spots3d.find_candidates_params)
 
         # # used variables for gaussian fit if peaks are not merged
         # self._peaks_merged = False
@@ -982,6 +994,9 @@ class SpotDetection(QWidget):
         print("starting fit spots")
         self._spots3d.run_fit_candidates()
         print("finished fit spots")
+        if DEBUG:
+            print("In _fit_spots:")
+            print("_spots3d.fit_candidate_spots_params:", self._spots3d.fit_candidate_spots_params)
 
         self._centers = self._spots3d._fit_params[:, 3:0:-1]
         print(f"Fitted {len(self._spots3d._fit_params)} spots")
@@ -1160,6 +1175,9 @@ class SpotDetection(QWidget):
         print(f"Selected {nb_kept} spots out of {len(self._spots3d._to_keep)} candidates")
         self._add_points(self._centers_fit_masked, name='filtered spots', blending='additive', size=0.25, face_color='b')
         self.steps_performed['filter_spots'] = True
+        if DEBUG:
+            print("In _filter_spots:")
+            print("_spots3d.spot_filter_params:", self._spots3d.spot_filter_params)
         
         
     def _inspect_filtering(self):
