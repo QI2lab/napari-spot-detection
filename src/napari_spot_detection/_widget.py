@@ -40,7 +40,7 @@ import sys
 from opm_merfish_analysis.SPOTS3D import SPOTS3D
 from opm_merfish_analysis._imageprocessing import deskew
 
-DEBUG = True
+DEBUG = False
 
 
 class FullSlider(QWidget):
@@ -131,6 +131,7 @@ class SpotDetection(QWidget):
         self.scan_chunk_size_deconv = 256
         self.scan_chunk_size_dog = 128
         self.scan_chunk_size_find_peaks = 128
+        self.n_spots_to_fit = 25000
         
         self.show_deskewed_deconv = True
         self.show_deskewed_dog = True
@@ -272,10 +273,10 @@ class SpotDetection(QWidget):
         # Deconvolution parameters
         self.lab_deconv_iter = QLabel('iterations')
         self.txt_deconv_iter = QLineEdit()
-        self.txt_deconv_iter.setText('30')
+        self.txt_deconv_iter.setText('100')
         self.lab_deconv_tvtau = QLabel('TV tau')
         self.txt_deconv_tvtau = QLineEdit()
-        self.txt_deconv_tvtau.setText('.0001')
+        self.txt_deconv_tvtau.setText('.0025')
         self.but_run_deconvolution = QPushButton()
         self.but_run_deconvolution.setText('Run deconvolution')
         self.but_run_deconvolution.clicked.connect(self._run_deconvolution)
@@ -348,19 +349,19 @@ class SpotDetection(QWidget):
         # DoG blob detection widgets
         self.lab_dog_sigma_z_factor = QLabel('sigma DoG z factor')
         self.txt_dog_sigma_small_z_factor = QLineEdit()
-        self.txt_dog_sigma_small_z_factor.setText('0.5')
+        self.txt_dog_sigma_small_z_factor.setText('1.0')
         self.txt_dog_sigma_large_z_factor = QLineEdit()
-        self.txt_dog_sigma_large_z_factor.setText('5')
+        self.txt_dog_sigma_large_z_factor.setText('3')
         self.lab_dog_sigma_y_factor = QLabel('sigma DoG y factor')
         self.txt_dog_sigma_small_y_factor = QLineEdit()
-        self.txt_dog_sigma_small_y_factor.setText('0.5')
+        self.txt_dog_sigma_small_y_factor.setText('0.1')
         self.txt_dog_sigma_large_y_factor = QLineEdit()
-        self.txt_dog_sigma_large_y_factor.setText('5')
+        self.txt_dog_sigma_large_y_factor.setText('3')
         self.lab_dog_sigma_x_factor = QLabel('sigma DoG x factor')
         self.txt_dog_sigma_small_x_factor = QLineEdit()
-        self.txt_dog_sigma_small_x_factor.setText('0.5')
+        self.txt_dog_sigma_small_x_factor.setText('0.1')
         self.txt_dog_sigma_large_x_factor = QLineEdit()
-        self.txt_dog_sigma_large_x_factor.setText('5')
+        self.txt_dog_sigma_large_x_factor.setText('3')
         # self.sld_dog_thresh = FullSlider(range=(0.1, 20), step=0.1, label="Blob threshold")
         self.lab_dog_thresh = QLabel('DoG threshold')
         self.sld_dog_thresh = QLabeledDoubleSlider(Qt.Orientation.Horizontal)
@@ -454,7 +455,7 @@ class SpotDetection(QWidget):
         # gaussian fitting widgets
         self.lab_n_spots_to_fit= QLabel('n spots to fit')
         self.txt_n_spots_to_fit= QLineEdit()
-        self.txt_n_spots_to_fit.setText('250000')
+        self.txt_n_spots_to_fit.setText(str(self.n_spots_to_fit))
         self.lab_roi_sizes = QLabel('Fit ROI size factors (z / y / x)')
         self.txt_roi_z_factor= QLineEdit()
         self.txt_roi_z_factor.setText('5')
