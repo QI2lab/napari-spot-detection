@@ -388,6 +388,9 @@ class SpotDetection(QWidget):
         self.sld_min_spot_z_factor = QLabeledDoubleSlider(Qt.Orientation.Horizontal)
         self.sld_min_spot_z_factor.setRange(0, 10)
         self.sld_min_spot_z_factor.setValue(2.5)
+        self.lab_find_peaks_source = QLabel('run DoG on:')
+        self.cbx_find_peaks_source = QComboBox()
+        self.cbx_find_peaks_source.addItems(['DoG', 'deconvolved', 'raw'])
         self.but_find_peaks = QPushButton()
         self.but_find_peaks.setText('Find peaks')
         self.but_find_peaks.clicked.connect(self._find_peaks)
@@ -425,7 +428,11 @@ class SpotDetection(QWidget):
         dogThreshLayout = QHBoxLayout()
         dogThreshLayout.addWidget(self.lab_dog_thresh)
         dogThreshLayout.addWidget(self.sld_dog_thresh)
+        peaksSourceLayout = QHBoxLayout()
+        peaksSourceLayout.addWidget(self.lab_find_peaks_source)
+        peaksSourceLayout.addWidget(self.cbx_find_peaks_source)
         group_layout.addLayout(dogThreshLayout)
+        group_layout.addLayout(peaksSourceLayout)
         group_layout.addWidget(self.but_find_peaks)
         # mergePeaksLayout = QHBoxLayout()
         # mergePeaksLayout.addWidget(self.lab_merge_peaks)
@@ -903,6 +910,12 @@ class SpotDetection(QWidget):
             self._compute_dog()
 
         print("starting find candidates")
+        if self.cbx_find_peaks_source.currentIndex() == 0:
+            self._spots3d.find_candidates_source_data = 'dog'
+        elif self.cbx_find_peaks_source.currentIndex() == 1:
+            self._spots3d.find_candidates_source_data = 'decon'
+        else:
+            self._spots3d.find_candidates_source_data = 'raw'
         self._spots3d.find_candidates_params = {
             'threshold' : self.sld_dog_thresh.value(),
             'min_spot_xy_factor' : self.sld_min_spot_xy_factor.value(),
