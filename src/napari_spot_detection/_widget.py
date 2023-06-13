@@ -103,6 +103,7 @@ class SpotDetection(QWidget):
         self._spot_fitted = False
         self._centers_fit_masked = None
         self._fit_strs = None
+        self.n_spots_to_fit = 25000
         
         self.setLayout(QVBoxLayout())
         self.layout().setSpacing(0)
@@ -131,7 +132,6 @@ class SpotDetection(QWidget):
         self.scan_chunk_size_deconv = 256
         self.scan_chunk_size_dog = 128
         self.scan_chunk_size_find_peaks = 128
-        self.n_spots_to_fit = 25000
         
         self.show_deskewed_deconv = True
         self.show_deskewed_dog = True
