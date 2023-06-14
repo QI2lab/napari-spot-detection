@@ -103,7 +103,7 @@ class SpotDetection(QWidget):
         self._spot_fitted = False
         self._centers_fit_masked = None
         self._fit_strs = None
-        self.n_spots_to_fit = 25000
+        self.n_spots_to_fit = 5000
         
         self.setLayout(QVBoxLayout())
         self.layout().setSpacing(0)
@@ -276,7 +276,7 @@ class SpotDetection(QWidget):
         self.txt_deconv_iter.setText('100')
         self.lab_deconv_tvtau = QLabel('TV tau')
         self.txt_deconv_tvtau = QLineEdit()
-        self.txt_deconv_tvtau.setText('.0025')
+        self.txt_deconv_tvtau.setText('.001')
         self.but_run_deconvolution = QPushButton()
         self.but_run_deconvolution.setText('Run deconvolution')
         self.but_run_deconvolution.clicked.connect(self._run_deconvolution)
@@ -388,7 +388,7 @@ class SpotDetection(QWidget):
         self.sld_min_spot_z_factor = QLabeledDoubleSlider(Qt.Orientation.Horizontal)
         self.sld_min_spot_z_factor.setRange(0, 10)
         self.sld_min_spot_z_factor.setValue(2.5)
-        self.lab_find_peaks_source = QLabel('run DoG on:')
+        self.lab_find_peaks_source = QLabel('Find peak using:')
         self.cbx_find_peaks_source = QComboBox()
         self.cbx_find_peaks_source.addItems(['DoG', 'deconvolved', 'raw'])
         self.but_find_peaks = QPushButton()
@@ -465,11 +465,11 @@ class SpotDetection(QWidget):
         self.txt_n_spots_to_fit.setText(str(self.n_spots_to_fit))
         self.lab_roi_sizes = QLabel('Fit ROI size factors (z / y / x)')
         self.txt_roi_z_factor= QLineEdit()
-        self.txt_roi_z_factor.setText('5')
+        self.txt_roi_z_factor.setText('3')
         self.txt_roi_y_factor = QLineEdit()
-        self.txt_roi_y_factor.setText('5')
+        self.txt_roi_y_factor.setText('2')
         self.txt_roi_x_factor = QLineEdit()
-        self.txt_roi_x_factor.setText('5')
+        self.txt_roi_x_factor.setText('2')
 
         self.but_fit = QPushButton()
         self.but_fit.setText('Fit spots')
