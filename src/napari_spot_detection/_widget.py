@@ -899,6 +899,7 @@ class SpotDetection(QWidget):
         self.steps_performed['apply_DoG'] = True
         if DEBUG:
             print("In _compute_dog:")
+            print("_spots3d.dog_filter_source_data:", self._spots3d.dog_filter_source_data)
             print("_spots3d.DoG_filter_params:", self._spots3d.DoG_filter_params)
 
 
@@ -914,7 +915,7 @@ class SpotDetection(QWidget):
             self._spots3d.find_candidates_source_data = 'dog'
         elif self.cbx_find_peaks_source.currentIndex() == 1:
             self._spots3d.find_candidates_source_data = 'decon'
-        else:
+        elif self.cbx_find_peaks_source.currentIndex() == 2:
             self._spots3d.find_candidates_source_data = 'raw'
         self._spots3d.find_candidates_params = {
             'threshold' : self.sld_dog_thresh.value(),
@@ -926,6 +927,7 @@ class SpotDetection(QWidget):
         print("finished find candidates")
         if DEBUG:
             print("In _find_peaks:")
+            print("_spots3d.find_candidates_source_data:", self._spots3d.find_candidates_source_data)
             print("_spots3d.find_candidates_params:", self._spots3d.find_candidates_params)
 
         # # used variables for gaussian fit if peaks are not merged
@@ -1344,6 +1346,7 @@ class SpotDetection(QWidget):
             'decon_params': self._spots3d.decon_params,
             'dog_filter_source_data': self._spots3d.dog_filter_source_data,
             'DoG_filter_params': self._spots3d.DoG_filter_params,
+            'find_candidates_source_data': self._spots3d.find_candidates_source_data,
             'find_candidates_params': self._spots3d.find_candidates_params,
             'fit_candidate_spots_params': self._spots3d.fit_candidate_spots_params,
             'spot_filter_params': self._spots3d.spot_filter_params,
@@ -1418,6 +1421,13 @@ class SpotDetection(QWidget):
             self.sld_min_spot_xy_factor.setValue(detection_parameters['find_candidates_params']['min_spot_xy_factor'])
             self.sld_min_spot_z_factor.setValue(detection_parameters['find_candidates_params']['min_spot_z_factor'])
             
+            if 'find_candidates_source_data' in detection_parameters.keys():
+                if detection_parameters['find_candidates_source_data'] == 'dog':
+                    self.cbx_find_peaks_source.setCurrentIndex(0)
+                elif detection_parameters['find_candidates_source_data'] == 'decon':
+                    self.cbx_find_peaks_source.setCurrentIndex(1)
+                elif detection_parameters['find_candidates_source_data'] == 'raw':
+                    self.cbx_find_peaks_source.setCurrentIndex(2)
             self.txt_n_spots_to_fit.setText(str(detection_parameters['fit_candidate_spots_params']['n_spots_to_fit']))
             self.txt_roi_z_factor.setText(str(detection_parameters['fit_candidate_spots_params']['roi_z_factor']))
             self.txt_roi_y_factor.setText(str(detection_parameters['fit_candidate_spots_params']['roi_y_factor']))
