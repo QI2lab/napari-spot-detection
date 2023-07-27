@@ -381,13 +381,11 @@ class SpotDetection(QWidget):
         self.chk_merge_peaks = QCheckBox()
         self.chk_merge_peaks.setChecked(False)
         self.lab_min_spot_xy_factor = QLabel('min spot xy factor')
-        self.sld_min_spot_xy_factor = QLabeledDoubleSlider(Qt.Orientation.Horizontal)
-        self.sld_min_spot_xy_factor.setRange(0, 10)
-        self.sld_min_spot_xy_factor.setValue(2.5)
+        self.txt_min_spot_xy_factor = QLineEdit()
+        self.txt_min_spot_xy_factor.setText('2.5')
         self.lab_min_spot_z_factor = QLabel('min spot z factor')
-        self.sld_min_spot_z_factor = QLabeledDoubleSlider(Qt.Orientation.Horizontal)
-        self.sld_min_spot_z_factor.setRange(0, 10)
-        self.sld_min_spot_z_factor.setValue(2.5)
+        self.txt_min_spot_z_factor = QLineEdit()
+        self.txt_min_spot_z_factor.setText('2.5')
         self.lab_find_peaks_source = QLabel('Find peak using:')
         self.cbx_find_peaks_source = QComboBox()
         self.cbx_find_peaks_source.addItems(['DoG', 'deconvolved', 'raw'])
@@ -434,18 +432,18 @@ class SpotDetection(QWidget):
         group_layout.addLayout(dogThreshLayout)
         group_layout.addLayout(peaksSourceLayout)
         group_layout.addWidget(self.but_find_peaks)
-        # mergePeaksLayout = QHBoxLayout()
+        mergePeaksLayout = QHBoxLayout()
         # mergePeaksLayout.addWidget(self.lab_merge_peaks)
         # mergePeaksLayout.addWidget(self.chk_merge_peaks)
-        # mergePeaksXYfactorLayout = QHBoxLayout()
-        # mergePeaksXYfactorLayout.addWidget(self.lab_min_spot_xy_factor)
-        # mergePeaksXYfactorLayout.addWidget(self.sld_min_spot_xy_factor)
-        # mergePeaksZfactorLayout = QHBoxLayout()
-        # mergePeaksZfactorLayout.addWidget(self.lab_min_spot_z_factor)
-        # mergePeaksZfactorLayout.addWidget(self.sld_min_spot_z_factor)
+        mergePeaksXYfactorLayout = QHBoxLayout()
+        mergePeaksXYfactorLayout.addWidget(self.lab_min_spot_xy_factor)
+        mergePeaksXYfactorLayout.addWidget(self.txt_min_spot_xy_factor)
+        mergePeaksZfactorLayout = QHBoxLayout()
+        mergePeaksZfactorLayout.addWidget(self.lab_min_spot_z_factor)
+        mergePeaksZfactorLayout.addWidget(self.txt_min_spot_z_factor)
         # group_layout.addLayout(mergePeaksLayout)
-        # group_layout.addLayout(mergePeaksXYfactorLayout)
-        # group_layout.addLayout(mergePeaksZfactorLayout)
+        group_layout.addLayout(mergePeaksXYfactorLayout)
+        group_layout.addLayout(mergePeaksZfactorLayout)
         # group_layout.addWidget(self.but_merge_peaks)
 
         return group
@@ -919,8 +917,8 @@ class SpotDetection(QWidget):
             self._spots3d.find_candidates_source_data = 'raw'
         self._spots3d.find_candidates_params = {
             'threshold' : self.sld_dog_thresh.value(),
-            'min_spot_xy_factor' : self.sld_min_spot_xy_factor.value(),
-            'min_spot_z_factor' : self.sld_min_spot_z_factor.value(),
+            'min_spot_xy_factor' : float(self.txt_min_spot_xy_factor.text()),
+            'min_spot_z_factor' : float(self.txt_min_spot_z_factor.text()),
             }
         self._spots3d.scan_chunk_size = self.scan_chunk_size_find_peaks # GPU timeout on OPM if > 64. Will change registry settings for TDM timeout.
         self._spots3d.run_find_candidates()
@@ -1418,8 +1416,8 @@ class SpotDetection(QWidget):
                 self.cbx_dog_choice.setCurrentIndex(0)
             else:
                 self.cbx_dog_choice.setCurrentIndex(1)
-            self.sld_min_spot_xy_factor.setValue(detection_parameters['find_candidates_params']['min_spot_xy_factor'])
-            self.sld_min_spot_z_factor.setValue(detection_parameters['find_candidates_params']['min_spot_z_factor'])
+            self.txt_min_spot_xy_factor.setText(str(detection_parameters['find_candidates_params']['min_spot_xy_factor']))
+            self.txt_min_spot_z_factor.setText(str(detection_parameters['find_candidates_params']['min_spot_z_factor']))
             
             if 'find_candidates_source_data' in detection_parameters.keys():
                 if detection_parameters['find_candidates_source_data'] == 'dog':
