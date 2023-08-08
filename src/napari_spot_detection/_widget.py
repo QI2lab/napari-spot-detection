@@ -362,12 +362,9 @@ class SpotDetection(QWidget):
         self.txt_dog_sigma_small_x_factor.setText('0.1')
         self.txt_dog_sigma_large_x_factor = QLineEdit()
         self.txt_dog_sigma_large_x_factor.setText('3')
-        # self.sld_dog_thresh = FullSlider(range=(0.1, 20), step=0.1, label="Blob threshold")
         self.lab_dog_thresh = QLabel('DoG threshold')
-        self.sld_dog_thresh = QLabeledDoubleSlider(Qt.Orientation.Horizontal)
-        self.sld_dog_thresh.setRange(0, 500)
-        self.sld_dog_thresh.setValue(50)
-        # self.sld_dog_thresh.setBarIsRigid(False) not implemented for QLabeledDoubleSlider :'(
+        self.txt_dog_thresh = QLineEdit()
+        self.txt_dog_thresh.setText('50')
         self.lab_dog_choice = QLabel('run DoG on:')
         self.cbx_dog_choice = QComboBox()
         self.cbx_dog_choice.addItems(['deconvolved', 'raw'])
@@ -425,7 +422,7 @@ class SpotDetection(QWidget):
         group_layout.addWidget(self.but_dog)
         dogThreshLayout = QHBoxLayout()
         dogThreshLayout.addWidget(self.lab_dog_thresh)
-        dogThreshLayout.addWidget(self.sld_dog_thresh)
+        dogThreshLayout.addWidget(self.txt_dog_thresh)
         peaksSourceLayout = QHBoxLayout()
         peaksSourceLayout.addWidget(self.lab_find_peaks_source)
         peaksSourceLayout.addWidget(self.cbx_find_peaks_source)
@@ -916,7 +913,7 @@ class SpotDetection(QWidget):
         elif self.cbx_find_peaks_source.currentIndex() == 2:
             self._spots3d.find_candidates_source_data = 'raw'
         self._spots3d.find_candidates_params = {
-            'threshold' : self.sld_dog_thresh.value(),
+            'threshold' : float(self.txt_dog_thresh.text()),
             'min_spot_xy_factor' : float(self.txt_min_spot_xy_factor.text()),
             'min_spot_z_factor' : float(self.txt_min_spot_z_factor.text()),
             }
@@ -1411,7 +1408,7 @@ class SpotDetection(QWidget):
             self.txt_dog_sigma_small_x_factor.setText(str(detection_parameters['DoG_filter_params']['sigma_small_x_factor']))
             self.txt_dog_sigma_large_x_factor.setText(str(detection_parameters['DoG_filter_params']['sigma_large_x_factor']))
             
-            self.sld_dog_thresh.setValue(detection_parameters['find_candidates_params']['threshold'])
+            self.txt_dog_thresh.setText(str(detection_parameters['find_candidates_params']['threshold']))
             if detection_parameters['dog_filter_source_data'] == 'decon':
                 self.cbx_dog_choice.setCurrentIndex(0)
             else:
