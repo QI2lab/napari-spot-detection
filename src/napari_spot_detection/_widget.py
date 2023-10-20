@@ -136,6 +136,8 @@ class SpotDetection(QWidget):
         self.show_deskewed_deconv = True
         self.show_deskewed_dog = True
 
+        self._verbose = 2
+
         
     def _create_gui(self):
         wdg = QWidget()
@@ -727,7 +729,8 @@ class SpotDetection(QWidget):
         bin_size_list = (1,) * (psf.ndim - 2) + (oversampling, oversampling)
         self.psf = camera.bin(psf, bin_size_list, mode='sum')
         self._psf_origin = 'generated'
-        print("PSF generated")
+        if self._verbose > 0:
+            print("PSF generated")
 
 
     def _load_psf(self):
@@ -739,7 +742,8 @@ class SpotDetection(QWidget):
             self.psf = tifffile.imread(filename)
             self._psf_origin = filename
             self.steps_performed['load_psf'] = True
-            print("PSF loaded:", filename)
+            if self._verbose > 0:
+                print("PSF loaded:", filename)
 
 
     def _get_selected_image(self):
@@ -810,14 +814,16 @@ class SpotDetection(QWidget):
             microscope_params=microscope_params,
             )
         self.steps_performed['load_model'] = True
-        print("model instanciated")
+        if self._verbose > 0:
+            print("model instanciated")
 
 
     def _run_deconvolution(self):
         if not self.steps_performed['load_model']:
             self._get_spot3d()
         
-        print("starting deconvolution")
+        if self._verbose > 0:
+            print("starting deconvolution")
         new_decon_params = {
             'iterations' : int(self.txt_deconv_iter.text()),
             'tv_tau' : float(self.txt_deconv_tvtau.text()),
@@ -825,7 +831,8 @@ class SpotDetection(QWidget):
         self._spots3d.decon_params = new_decon_params
         self._spots3d.scan_chunk_size = self.scan_chunk_size_deconv # GPU out-of-memory on OPM PC if > 128
         self._spots3d.run_deconvolution()
-        print("finished deconvolution")
+        if self._verbose > 0:
+            print("finished deconvolution")
         self._add_image(data=self._spots3d.decon_data, name='deconv', scale=self.scale)
         self.steps_performed['run_deconvolution'] = True
         if DEBUG:
@@ -866,7 +873,8 @@ class SpotDetection(QWidget):
         if not self.steps_performed['run_deconvolution']:
             self._run_deconvolution()
 
-        print("starting DoG filter")
+        if self._verbose > 0:
+            print("starting DoG filter")
         if self.cbx_dog_choice.currentIndex() == 0:
             self._spots3d.dog_filter_source_data = 'decon'
         else:
@@ -883,7 +891,8 @@ class SpotDetection(QWidget):
         # add choice of chunk size in GUI?
         self._spots3d.scan_chunk_size = self.scan_chunk_size_dog # GPU out-of-memory on OPM PC if > 64
         self._spots3d.run_DoG_filter()
-        print("finished DoG filter")
+        if self._verbose > 0:
+            print("finished DoG filter")
         self._add_image(
             data=self._spots3d.dog_data, 
             name='DoG', 
@@ -905,7 +914,8 @@ class SpotDetection(QWidget):
         if not self.steps_performed['apply_DoG']:
             self._compute_dog()
 
-        print("starting find candidates")
+        if self._verbose > 0:
+            print("starting find candidates")
         if self.cbx_find_peaks_source.currentIndex() == 0:
             self._spots3d.find_candidates_source_data = 'dog'
         elif self.cbx_find_peaks_source.currentIndex() == 1:
@@ -919,11 +929,14 @@ class SpotDetection(QWidget):
             }
         self._spots3d.scan_chunk_size = self.scan_chunk_size_find_peaks # GPU timeout on OPM if > 64. Will change registry settings for TDM timeout.
         self._spots3d.run_find_candidates()
-        print("finished find candidates")
+        if self._verbose > 0:
+            print("finished find candidates")
         if DEBUG:
             print("In _find_peaks:")
             print("_spots3d.find_candidates_source_data:", self._spots3d.find_candidates_source_data)
             print("_spots3d.find_candidates_params:", self._spots3d.find_candidates_params)
+            print("type(self._spots3d._spot_candidates):", type(self._spots3d._spot_candidates))
+            print("self._spots3d._spot_candidates:", self._spots3d._spot_candidates)
 
         # # used variables for gaussian fit if peaks are not merged
         # self._peaks_merged = False
@@ -936,19 +949,22 @@ class SpotDetection(QWidget):
         if (theta > 0) and ('deskewed' not in self.viewer.layers):
             pixel_size = self._spots3d._image_params['pixel_size'] 
             scan_step = self._spots3d._image_params['scan_step'] 
-            print("Deskewing raw image")
+            if self._verbose > 0:
+                print("Deskewing raw image")
             self._add_image(
                 deskew(self._spots3d.data, pixel_size, scan_step, theta), 
                 name='deskewed', 
                 scale=[pixel_size, pixel_size, pixel_size])
             if self.show_deskewed_deconv:
-                print("Deskewing deconvolved image")
+                if self._verbose > 0:
+                    print("Deskewing deconvolved image")
                 self._add_image(
                     deskew(self._spots3d.decon_data, pixel_size, scan_step, theta), 
                     name='deskewed deconv', 
                     scale=[pixel_size, pixel_size, pixel_size])
             if self.show_deskewed_dog:
-                print("Deskewing DoG image")
+                if self._verbose > 0:
+                    print("Deskewing DoG image")
                 self._add_image(
                     deskew(self._spots3d.dog_data, pixel_size, scan_step, theta), 
                     name='deskewed DoG', 
@@ -1002,15 +1018,18 @@ class SpotDetection(QWidget):
             'roi_y_factor' : float(self.txt_roi_y_factor.text()),
             'roi_x_factor' : float(self.txt_roi_x_factor.text()),
         }
-        print("starting fit spots")
+        if self._verbose > 0:
+            print("starting fit spots")
         self._spots3d.run_fit_candidates()
-        print("finished fit spots")
+        if self._verbose > 0:
+            print("finished fit spots")
         if DEBUG:
             print("In _fit_spots:")
             print("_spots3d.fit_candidate_spots_params:", self._spots3d.fit_candidate_spots_params)
 
         self._centers = self._spots3d._fit_params[:, 3:0:-1]
-        print(f"Fitted {len(self._spots3d._fit_params)} spots")
+        if self._verbose > 1:
+            print(f"Fitted {len(self._spots3d._fit_params)} spots")
         self._add_points(self._centers, name='fitted spots', blending='additive', size=0.25, face_color='g')
 
         # process all the results
@@ -1176,14 +1195,17 @@ class SpotDetection(QWidget):
             'max_sigma_ratio' : self.sld_filter_sigma_ratio_range.value()[1],
         }
         self._spots3d.spot_filter_params = spot_filter_params
-        print("starting filter spots")
+        if self._verbose > 0:
+            print("starting filter spots")
         self._spots3d.run_filter_spots(return_values=True)
-        print("finished filter spots")
+        if self._verbose > 0:
+            print("finished filter spots")
 
         self._spot_select = self._spots3d._to_keep
         self._centers_fit_masked = self._centers[self._spot_select, :]
         nb_kept = self._spots3d._to_keep.sum()
-        print(f"Selected {nb_kept} spots out of {len(self._spots3d._to_keep)} candidates")
+        if self._verbose > 1:
+            print(f"Selected {nb_kept} spots out of {len(self._spots3d._to_keep)} candidates")
         self._add_points(self._centers_fit_masked, name='filtered spots', blending='additive', size=0.25, face_color='b')
         self.steps_performed['filter_spots'] = True
         if DEBUG:
@@ -1390,7 +1412,8 @@ class SpotDetection(QWidget):
                 try:
                     self.psf = tifffile.imread(detection_parameters['psf_origin'])
                     self._psf_origin = detection_parameters['psf_origin']
-                    print("PSF loaded from", self._psf_origin)
+                    if self._verbose > 0:
+                        print("PSF loaded from", self._psf_origin)
                     self.steps_performed['load_psf'] = True
                 except FileNotFoundError:
                     print("PSF couldn't be loaded because file was not found at", detection_parameters['psf_origin'])
@@ -1450,7 +1473,8 @@ class SpotDetection(QWidget):
             self.sld_dist_boundary_z_factor.setValue(detection_parameters['spot_filter_params']['dist_boundary_z_factor'])
             self.sld_dist_boundary_xy_factor.setValue(detection_parameters['spot_filter_params']['dist_boundary_xy_factor'])
             # self.sld_filter_chi_squared.setValue(detection_parameters[''])  # not implemented yet
-            print("Parameters loaded")
+            if self._verbose > 0:
+                print("Parameters loaded")
 
             
 
