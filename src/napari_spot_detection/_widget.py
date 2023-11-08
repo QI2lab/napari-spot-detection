@@ -26,6 +26,7 @@ from qtpy.QtWidgets import (
 )
 from superqt import QLabeledDoubleRangeSlider, QLabeledDoubleSlider
 import numpy as np
+import matplotlib
 import matplotlib.pyplot as plt
 import pandas as pd
 import tifffile
@@ -95,6 +96,8 @@ class FullSlider(QWidget):
 
 class SpotDetection(QWidget):
     def __init__(self, napari_viewer):
+        matplotlib.use("Qt5Agg")
+
         super().__init__()
         self.viewer = napari_viewer
         # automatic adaptation of parameters when steps complete, False when loading parameters
@@ -126,6 +129,9 @@ class SpotDetection(QWidget):
             'fit_spots': False,
             'filter_spots': False,
         }
+
+        # matplotlib figure showing marginal and joint parameter distributions
+        self.param_figh = None
         
         # For a 24GB GPU
         # TODO: add option in GUI with textboxes
@@ -481,9 +487,9 @@ class SpotDetection(QWidget):
         self.but_plot_fitted = QPushButton()
         self.but_plot_fitted.setText('Plot fitted parameters')
         self.but_plot_fitted.clicked.connect(self._plot_fitted_params)
-        self.but_plot_fitted_2D = QPushButton()
-        self.but_plot_fitted_2D.setText('Plot 2D distributions')
-        self.but_plot_fitted_2D.clicked.connect(self._plot_fitted_params_2D)
+        # self.but_plot_fitted_2D = QPushButton()
+        # self.but_plot_fitted_2D.setText('Plot 2D distributions')
+        # self.but_plot_fitted_2D.clicked.connect(self._plot_fitted_params_2D)
 
         # layout for fitting gaussian spots
         nspotsLayout = QHBoxLayout()
@@ -499,7 +505,7 @@ class SpotDetection(QWidget):
         group_layout.addWidget(self.but_fit)
         plotFittedLayout = QHBoxLayout()
         plotFittedLayout.addWidget(self.but_plot_fitted)
-        plotFittedLayout.addWidget(self.but_plot_fitted_2D)
+        # plotFittedLayout.addWidget(self.but_plot_fitted_2D)
         group_layout.addLayout(plotFittedLayout)
         percentileLayout = QHBoxLayout()
         percentileLayout.addWidget(self.lab_filter_percentile)
@@ -1075,7 +1081,7 @@ class SpotDetection(QWidget):
     def _plot_fitted_params(self):
         """
         Generate distribution plots of fitted parameters to help selecting
-        appropriate threshold values for spot filtering.
+        appropriate threshold values for spot filtering. Show both marginal and joint distributions in a grid
         """
         
         if not self.steps_performed['fit_spots']:
@@ -1084,89 +1090,83 @@ class SpotDetection(QWidget):
             p_mini = float(self.txt_filter_percentile_min.text())
             p_maxi = float(self.txt_filter_percentile_max.text())
 
-            plt.figure()
-            plt.hist(self._amplitudes, bins='auto', range=[self.sld_filter_amplitude_range.value()[0],
-                                                           self.sld_filter_amplitude_range.value()[1]])
-            plt.title("Distribution of amplitude values")
-
-            plt.figure()
-            plt.hist(self._sigmas_xy_factors, bins='auto', range=self.sld_filter_sigma_xy_factor.value())
-            plt.title("Distribution of sigmas_xy factors")
-
-            plt.figure()
-            plt.hist(self._sigmas_z_factors, bins='auto', range=self.sld_filter_sigma_z_factor.value())
-            plt.title("Distribution of sigmas_z factors")
-
-            plt.figure()
-            plt.hist(self._sigma_ratios, bins='auto', range=self.sld_filter_sigma_ratio_range.value())
-            plt.title("Distribution of sigma_ratios values")
-
-            plt.figure()
-            plt.hist(self._chi_squared, bins='auto', range=(np.nanpercentile(self._chi_squared, p_mini), 
-                                                            np.nanpercentile(self._chi_squared, p_maxi)))
-            plt.title("Distribution of chi_squared values")
-
-            plt.figure()
-            plt.hist(self._dist_fit_xy_factors, bins='auto', range=(0, 8))
-            plt.title("Distribution of dist_fit_xy factors")
-
-            plt.figure()
-            plt.hist(self._dist_fit_z_factors, bins='auto', range=(0, 8))
-            plt.title("Distribution of dist_fit_z factors")
-
-            plt.show()
-    
-
-    def _plot_fitted_params_2D(self):
-        """
-        Generate 2D distribution plots of fitted parameters to help selecting
-        appropriate threshold values for spot filtering.
-        """
-
-        if not self.steps_performed['fit_spots']:
-            print("Perform spot fitting first.")
-        else:
-            p_mini = float(self.txt_filter_percentile_min.text())
-            p_maxi = float(self.txt_filter_percentile_max.text())
-
             distrib = {
-                'amplitudes': {'data': self._amplitudes, 
-                            'range': self.sld_filter_amplitude_range.value()},
-                'sigmas_xy_factors': {'data': self._sigmas_xy_factors, 
-                                    'range': self.sld_filter_sigma_xy_factor.value()},
-                'sigmas_z_factors': {'data': self._sigmas_z_factors, 
-                                    'range': self.sld_filter_sigma_z_factor.value()},
-                'sigma_ratios': {'data': self._sigma_ratios, 
-                                'range': self.sld_filter_sigma_ratio_range.value()},
-                'chi_squared': {'data': self._chi_squared, 
-                                'range': (np.nanpercentile(self._chi_squared, p_mini), 
-                                        np.nanpercentile(self._chi_squared, p_maxi))},
-                'dist_fit_xy_factors': {'data': self._dist_fit_xy_factors, 
-                                        'range': (np.nanpercentile(self._dist_fit_xy_factors, p_mini), 
-                                                np.nanpercentile(self._dist_fit_xy_factors, p_maxi))},
-                'dist_fit_z_factors': {'data': self._dist_fit_z_factors, 
-                                    'range': (np.nanpercentile(self._dist_fit_z_factors, p_mini), 
-                                                np.nanpercentile(self._dist_fit_z_factors, p_maxi))},
+                'amp': {'data': self._amplitudes,
+                        'range': self.sld_filter_amplitude_range.value()},
+                'sxy': {'data': self._sigmas_xy_factors,
+                        'range': self.sld_filter_sigma_xy_factor.value()},
+                'sz': {'data': self._sigmas_z_factors,
+                       'range': self.sld_filter_sigma_z_factor.value()},
+                'sigma ratio': {'data': self._sigma_ratios,
+                           'range': self.sld_filter_sigma_ratio_range.value()},
+                'chi sqr': {'data': self._chi_squared,
+                            'range': (np.nanpercentile(self._chi_squared, p_mini),
+                                      np.nanpercentile(self._chi_squared, p_maxi))},
+                'dist xy': {'data': self._dist_fit_xy_factors,
+                            'range': (np.nanpercentile(self._dist_fit_xy_factors, p_mini),
+                                      np.nanpercentile(self._dist_fit_xy_factors, p_maxi))},
+                'dist z': {'data': self._dist_fit_z_factors,
+                            'range': (np.nanpercentile(self._dist_fit_z_factors, p_mini),
+                                      np.nanpercentile(self._dist_fit_z_factors, p_maxi))},
             }
-            
-            var_labels = list(distrib.keys())
-            var_combi = itertools.combinations(var_labels, 2)
-            for var_x, var_y in var_combi:
-                x_mini, x_maxi = distrib[var_x]['range']
-                y_mini, y_maxi = distrib[var_y]['range']
-                x_select = np.logical_and(distrib[var_x]['data'] >= x_mini, distrib[var_x]['data'] <= x_maxi)
-                y_select = np.logical_and(distrib[var_y]['data'] >= y_mini, distrib[var_y]['data'] <= y_maxi)
-                select = np.logical_and(x_select, y_select)
-                x_data = distrib[var_x]['data'][select]
-                y_data = distrib[var_y]['data'][select]
 
-                plt.figure()
-                plt.scatter(x_data, y_data, s=10, marker='.', c='b', alpha=0.5)
-                plt.title(f"Distributions of {var_x} and {var_y}")
-                plt.xlabel(var_x)
-                plt.ylabel(var_y)
-                plt.show()
+            # figure
+            figh = plt.figure(figsize=(15, 15))
+            self.param_figh = figh
 
+            figh.suptitle("Fit parameter marginal and joint distributions")
+            nparams = len(distrib)
+            grid = figh.add_gridspec(nrows=nparams, hspace=0.2,
+                                     ncols=nparams, wspace=0.4,
+                                     left=0.05, right=0.95,
+                                     bottom=0.05, top=0.95)
+
+            for ii, (var_y, val_y) in enumerate(distrib.items()):
+                for jj, (var_x, val_x) in enumerate(distrib.items()):
+                    x_mini, x_maxi = val_x['range']
+                    if x_mini == x_maxi:
+                        x_maxi += 1e-12
+
+                    y_mini, y_maxi = val_y['range']
+                    if y_mini == y_maxi:
+                        y_maxi += 1e-12
+
+                    x_select = np.logical_and(val_x['data'] >= x_mini,
+                                              val_x['data'] <= x_maxi)
+                    y_select = np.logical_and(val_y['data'] >= y_mini,
+                                              val_y['data'] <= y_maxi)
+                    select = np.logical_and(x_select, y_select)
+                    x_data = val_x['data'][select]
+                    y_data = val_y['data'][select]
+
+                    # plot on new axes
+                    if jj <= ii:
+                        ax = figh.add_subplot(grid[ii, jj])
+                        if ii == jj:
+                            # marginal distributions
+                            ax.hist(x_data, bins='auto', range=[x_mini, x_maxi], histtype="stepfilled")
+                            ax.set_title(f"{var_x:s}")
+                            ax.set_xlim([x_mini, x_maxi])
+                            ax.set_ylabel("Number")
+                        else:
+                            # joint distributions
+                            ax.scatter(x_data, y_data, s=10, marker='.', c='b', alpha=0.5)
+                            ax.set_xlim([x_mini, x_maxi])
+                            ax.set_ylim([y_mini, y_maxi])
+
+                        ax.ticklabel_format(style='sci', axis='both', scilimits=(0, 0))
+
+                        # labels on on first in row/last in column
+                        if ii == (nparams - 1):
+                            ax.set_xlabel(var_x)
+                        else:
+                            ax.set_xticklabels([])
+
+                        if jj == 0:
+                            ax.set_ylabel(var_y)
+
+            # #################
+            plt.show(block=False)
 
     def _filter_spots(self):
         """
