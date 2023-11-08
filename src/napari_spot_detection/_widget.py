@@ -735,6 +735,8 @@ class SpotDetection(QWidget):
         bin_size_list = (1,) * (psf.ndim - 2) + (oversampling, oversampling)
         self.psf = camera.bin(psf, bin_size_list, mode='sum')
         self._psf_origin = 'generated'
+        self.steps_performed['load_psf'] = True
+
         if self._verbose > 0:
             print("PSF generated")
 
@@ -755,6 +757,8 @@ class SpotDetection(QWidget):
     def _get_selected_image(self):
         if len(self.viewer.layers) == 0:
             print("Open an image first")
+            img = None
+            scale = None
         else:
             if len(self.viewer.layers.selection) == 0:
                 img = self.viewer.layers[0].data
@@ -764,7 +768,8 @@ class SpotDetection(QWidget):
                 first_selected_layer = next(iter(self.viewer.layers.selection))
                 img = first_selected_layer.data
                 scale = first_selected_layer.scale
-            return img, scale
+
+        return img, scale
 
     def _add_image(self, data, name=None, **kwargs):
         """
@@ -805,6 +810,9 @@ class SpotDetection(QWidget):
             self._load_psf()
         
         img, self.scale = self._get_selected_image()
+        if img is None:
+            return
+
         na, ri, wvl, dc, dstage, theta = self._get_phy_params()
         metadata = {'pixel_size' : dc,
                     'scan_step' : dstage,
@@ -821,7 +829,7 @@ class SpotDetection(QWidget):
             )
         self.steps_performed['load_model'] = True
         if self._verbose > 0:
-            print("model instanciated")
+            print("model instantiated")
 
 
     def _run_deconvolution(self):
