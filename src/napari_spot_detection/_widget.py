@@ -39,7 +39,7 @@ from pathlib import Path
 import sys
 
 from opm_merfish_analysis.SPOTS3D import SPOTS3D
-from opm_merfish_analysis._imageprocessing import deskew
+from opm_merfish_analysis._imageprocessing import deskew, replace_hot_pixels
 
 DEBUG = False
 
@@ -121,6 +121,7 @@ class SpotDetection(QWidget):
         self.layout().addWidget(self._scroll)
         
         self.steps_performed = {
+            'load_dark_field': False,
             'load_psf': False,
             'load_model': False,
             'run_deconvolution': False,
@@ -212,6 +213,12 @@ class SpotDetection(QWidget):
         self.lab_spot_size_z_um = QLabel('Expected spot size z (µm)')
         self.txt_spot_size_z_um = QLineEdit()
         self.txt_spot_size_z_um.setText('')
+        self.lab_hotpix = QLabel('correct hot pixels')
+        self.chk_hotpix = QCheckBox()
+        self.chk_hotpix.setChecked(False)
+        self.but_hotpix = QPushButton()
+        self.but_hotpix.setText('load dark field')
+        self.but_hotpix.clicked.connect(self._load_dark_field)
         # in the future, allow user to define spot parameters from pixel size
         # self.lab_spot_size_xy = QLabel('Expected spot size xy (px)')
         # self.txt_spot_size_xy = QLineEdit()
@@ -228,7 +235,6 @@ class SpotDetection(QWidget):
         self.but_load_model = QPushButton()
         self.but_load_model.setText('Load model')
         self.but_load_model.clicked.connect(self._get_spot3d)
-
         # layout for spot size parametrization
         spotsizeLayout_optics = QHBoxLayout()
         spotsizeLayout_optics.addWidget(self.lab_na)
@@ -257,6 +263,10 @@ class SpotDetection(QWidget):
         # spotsizeLayout_zxy.addWidget(self.txt_spot_size_xy)
         # spotsizeLayout_zxy.addWidget(self.lab_spot_size_z)
         # spotsizeLayout_zxy.addWidget(self.txt_spot_size_z)
+        spotsizeLayout_hotpix = QHBoxLayout()
+        spotsizeLayout_hotpix.addWidget(self.lab_hotpix)
+        spotsizeLayout_hotpix.addWidget(self.chk_hotpix)
+        spotsizeLayout_hotpix.addWidget(self.but_hotpix)
         spotsizeLayout_psf = QHBoxLayout()
         spotsizeLayout_psf.addWidget(self.but_make_psf)
         spotsizeLayout_psf.addWidget(self.but_load_psf)
@@ -265,6 +275,7 @@ class SpotDetection(QWidget):
         group_layout.addLayout(spotsizeLayout_skewed)
         # group_layout.addLayout(spotsizeLayout_zxy_um)
         # spotsizeLayout.addLayout(spotsizeLayout_zxy)
+        group_layout.addLayout(spotsizeLayout_hotpix)
         group_layout.addLayout(spotsizeLayout_psf)
         group_layout.addWidget(self.but_load_model)
 
@@ -712,6 +723,19 @@ class SpotDetection(QWidget):
             theta = 0
         return na, ri, wvl, dc, dstage, theta
 
+
+    def _load_dark_field(self):
+        
+        (filename, _) = QFileDialog.getOpenFileName(
+            self, "Select a dark field image", "", "(*.tif *.tiff)"
+        )
+        if filename:
+            self.dark_field = tifffile.imread(filename)
+            self.steps_performed['load_dark_field'] = True
+            if self._verbose > 0:
+                print("dark field loaded:", filename)
+    
+
     def _make_psf(self):
 
         oversampling = 10
@@ -809,6 +833,10 @@ class SpotDetection(QWidget):
         It includes the image and parameters for analysis.
         Some paramaters will be updated by following steps. 
         """
+        if self.chk_hotpix and not self.steps_performed['load_dark_field']:
+            print("dark field image was not loaded, please load one")
+            self._load_dark_field()
+        
         if not self.steps_performed['load_psf']:
             self._load_psf()
         
@@ -818,6 +846,15 @@ class SpotDetection(QWidget):
         img = self._get_selected_image()
         if img is None:
             return
+        
+        if self.chk_hotpix:
+            spots3d_data = replace_hot_pixels(self.dark_field, img)
+            self._add_image(
+                spots3d_data, 
+                name='img hotpix corrected', 
+                scale=self.scale)
+        else:
+            spots3d_data = img
 
         metadata = {'pixel_size' : dc,
                     'scan_step' : dstage,
@@ -827,7 +864,7 @@ class SpotDetection(QWidget):
                              'theta' : theta}
 
         self._spots3d = SPOTS3D(
-            data = img,
+            data = spots3d_data,
             psf = self.psf, 
             metadata= metadata,
             microscope_params=microscope_params,
