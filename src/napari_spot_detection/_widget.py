@@ -758,7 +758,6 @@ class SpotDetection(QWidget):
         if len(self.viewer.layers) == 0:
             print("Open an image first")
             img = None
-            scale = None
         else:
             if len(self.viewer.layers.selection) == 0:
                 img = self.viewer.layers[0].data
@@ -768,8 +767,12 @@ class SpotDetection(QWidget):
                 first_selected_layer = next(iter(self.viewer.layers.selection))
                 img = first_selected_layer.data
                 scale = first_selected_layer.scale
+                if not np.array_equal(scale, self.scale):
+                    if self._verbose > 1:
+                        print(f"Changing image scale from {scale} to {self.scale}")
+                    first_selected_layer.scale = self.scale
 
-        return img, scale
+        return img
 
     def _add_image(self, data, name=None, **kwargs):
         """
@@ -809,11 +812,13 @@ class SpotDetection(QWidget):
         if not self.steps_performed['load_psf']:
             self._load_psf()
         
-        img, self.scale = self._get_selected_image()
+        na, ri, wvl, dc, dstage, theta = self._get_phy_params()
+        self.scale = np.array([dstage, dc, dc])
+
+        img = self._get_selected_image()
         if img is None:
             return
 
-        na, ri, wvl, dc, dstage, theta = self._get_phy_params()
         metadata = {'pixel_size' : dc,
                     'scan_step' : dstage,
                     'wvl' : wvl}
