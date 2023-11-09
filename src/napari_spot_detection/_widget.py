@@ -40,6 +40,7 @@ import sys
 
 from opm_merfish_analysis.SPOTS3D import SPOTS3D
 from opm_merfish_analysis._imageprocessing import deskew, replace_hot_pixels
+from opm_merfish_analysis._skeweddatatools import point_in_trapezoid
 
 DEBUG = False
 
@@ -142,6 +143,9 @@ class SpotDetection(QWidget):
         
         self.show_deskewed_deconv = True
         self.show_deskewed_dog = True
+
+        # post-fitting filter to remove spots outside of the defined ZYX coords array
+        self.filter_outliers = True
 
         self._verbose = 2
 
@@ -1084,9 +1088,28 @@ class SpotDetection(QWidget):
             print("_spots3d.fit_candidate_spots_params:", self._spots3d.fit_candidate_spots_params)
 
         self._centers = self._spots3d._fit_params[:, 3:0:-1]
+
+        if self.filter_outliers:
+            # Should we filter fitted spots and all related data in the spots3d object too?
+            # for now we only filter coordinates to display
+            if self._spots3d._is_skewed:
+                in_bounds = point_in_trapezoid(self._centers, self._spots3d._coords)
+            else:
+                z, y, x = self._spots3d._coords
+                dz_min, dxy_min = 0, 0 # or some other `dist_boundary_min`
+                in_bounds = np.logical_and.reduce((
+                    self._centers[:, 0] >= z.min() + dz_min,
+                    self._centers[:, 0] <= z.max() - dz_min,
+                    self._centers[:, 1] >= y.min() + dxy_min,
+                    self._centers[:, 1] <= y.max() - dxy_min,
+                    self._centers[:, 2] >= x.min() + dxy_min,
+                    self._centers[:, 2] <= x.max() - dxy_min))
+            self._show_centers = self._centers[in_bounds, :]
+        else:
+            self._show_centers = self._centers            
         if self._verbose > 1:
             print(f"Fitted {len(self._spots3d._fit_params)} spots")
-        self._add_points(self._centers, name='fitted spots', blending='additive', size=0.25, face_color='g')
+        self._add_points(self._show_centers, name='fitted spots', blending='additive', size=0.25, face_color='g')
 
         # process all the results
         self._amplitudes = self._spots3d._fit_params[:, 0]
