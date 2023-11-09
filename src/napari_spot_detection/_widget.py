@@ -833,7 +833,7 @@ class SpotDetection(QWidget):
         It includes the image and parameters for analysis.
         Some paramaters will be updated by following steps. 
         """
-        if self.chk_hotpix and not self.steps_performed['load_dark_field']:
+        if self.chk_hotpix.isChecked() and not self.steps_performed['load_dark_field']:
             print("dark field image was not loaded, please load one")
             self._load_dark_field()
         
@@ -847,7 +847,7 @@ class SpotDetection(QWidget):
         if img is None:
             return
         
-        if self.chk_hotpix:
+        if self.chk_hotpix.isChecked():
             spots3d_data = replace_hot_pixels(self.dark_field, img)
             self._add_image(
                 spots3d_data, 
