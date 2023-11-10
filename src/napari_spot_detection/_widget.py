@@ -699,6 +699,9 @@ class SpotDetection(QWidget):
         self.but_load_parameters = QPushButton()
         self.but_load_parameters.setText('Load detection parameters')
         self.but_load_parameters.clicked.connect(self._load_parameters)
+        self.but_run_dir = QPushButton()
+        self.but_run_dir.setText('Run on directory')
+        self.but_run_dir.clicked.connect(self._run_dir)
 
         # layout for saving and loading spots data and detection parameters
         saveloadLayout = QGridLayout()
@@ -707,6 +710,7 @@ class SpotDetection(QWidget):
         saveloadLayout.addWidget(self.but_save_parameters, 1, 0)
         saveloadLayout.addWidget(self.but_load_parameters, 1, 1)
         group_layout.addLayout(saveloadLayout)
+        group_layout.addWidget(self.but_run_dir)
 
         return group
 
@@ -1548,6 +1552,15 @@ class SpotDetection(QWidget):
             # self.sld_filter_chi_squared.setValue(detection_parameters[''])  # not implemented yet
             if self._verbose > 0:
                 print("Parameters loaded")
+
+
+    def _run_dir(self):
+        """
+        Perform spot localization on all image data in a directory.
+        """
+        path_dir = QFileDialog.getExistingDirectory(self, "Select Directory")
+        if path_dir is not None:
+            print("Performing spot localization on all images.")            
 
             
 
