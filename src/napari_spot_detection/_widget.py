@@ -385,9 +385,6 @@ class SpotDetection(QWidget):
         self.txt_dog_sigma_small_x_factor.setText('0.1')
         self.txt_dog_sigma_large_x_factor = QLineEdit()
         self.txt_dog_sigma_large_x_factor.setText('3')
-        self.lab_dog_thresh = QLabel('DoG threshold')
-        self.txt_dog_thresh = QLineEdit()
-        self.txt_dog_thresh.setText('50')
         self.lab_dog_choice = QLabel('run DoG on:')
         self.cbx_dog_choice = QComboBox()
         self.cbx_dog_choice.addItems(['deconvolved', 'raw'])
@@ -406,9 +403,15 @@ class SpotDetection(QWidget):
         self.lab_min_spot_z_factor = QLabel('min spot z factor')
         self.txt_min_spot_z_factor = QLineEdit()
         self.txt_min_spot_z_factor.setText('2.5')
-        self.lab_find_peaks_source = QLabel('Find peak using:')
+        self.lab_find_peaks_source = QLabel('Find peaks using:')
         self.cbx_find_peaks_source = QComboBox()
         self.cbx_find_peaks_source.addItems(['DoG', 'deconvolved', 'raw'])
+        self.lab_dog_thresh = QLabel('DoG threshold')
+        self.txt_dog_thresh = QLineEdit()
+        self.txt_dog_thresh.setText('50')
+        self.but_plot_thresh_curve = QPushButton()
+        self.but_plot_thresh_curve.setText('Plot threshold curve')
+        self.but_plot_thresh_curve.clicked.connect(self._plot_thresh_curve)
         self.but_find_peaks = QPushButton()
         self.but_find_peaks.setText('Find peaks')
         self.but_find_peaks.clicked.connect(self._find_peaks)
@@ -443,14 +446,15 @@ class SpotDetection(QWidget):
         dogLayout_dog_choice.addWidget(self.cbx_dog_choice)
         group_layout.addLayout(dogLayout_dog_choice)
         group_layout.addWidget(self.but_dog)
-        dogThreshLayout = QHBoxLayout()
-        dogThreshLayout.addWidget(self.lab_dog_thresh)
-        dogThreshLayout.addWidget(self.txt_dog_thresh)
         peaksSourceLayout = QHBoxLayout()
         peaksSourceLayout.addWidget(self.lab_find_peaks_source)
         peaksSourceLayout.addWidget(self.cbx_find_peaks_source)
-        group_layout.addLayout(dogThreshLayout)
+        dogThreshLayout = QHBoxLayout()
+        dogThreshLayout.addWidget(self.lab_dog_thresh)
+        dogThreshLayout.addWidget(self.txt_dog_thresh)
+        dogThreshLayout.addWidget(self.but_plot_thresh_curve)
         group_layout.addLayout(peaksSourceLayout)
+        group_layout.addLayout(dogThreshLayout)
         group_layout.addWidget(self.but_find_peaks)
         mergePeaksLayout = QHBoxLayout()
         # mergePeaksLayout.addWidget(self.lab_merge_peaks)
@@ -969,6 +973,46 @@ class SpotDetection(QWidget):
             print("In _compute_dog:")
             print("_spots3d.dog_filter_source_data:", self._spots3d.dog_filter_source_data)
             print("_spots3d.DoG_filter_params:", self._spots3d.DoG_filter_params)
+
+
+    def _plot_thresh_curve(self):
+        """
+        Generate semi-logy plot of found candidates vs threshold.
+        """
+        if not self.steps_performed['apply_DoG']:
+            self._compute_dog()
+
+        if self._verbose > 0:
+            print("starting find candidates")
+        if self.cbx_find_peaks_source.currentIndex() == 0:
+            self._spots3d.find_candidates_source_data = 'dog'
+            mini = self._spots3d._dog_data.min()
+            maxi = self._spots3d._dog_data.max()
+        elif self.cbx_find_peaks_source.currentIndex() == 1:
+            self._spots3d.find_candidates_source_data = 'decon'
+            mini = self._spots3d._decon_data.min()
+            maxi = self._spots3d._decon_data.max()
+        elif self.cbx_find_peaks_source.currentIndex() == 2:
+            self._spots3d.find_candidates_source_data = 'raw'
+            mini = self._spots3d._data.min()
+            maxi = self._spots3d._data.max()
+        
+        thresholds = np.arange(mini, maxi, 100)
+        n_candidates = []
+        # TODO: decrease verbosity (hide tqdm bars) during find_candidates
+        for thresh in thresholds:
+            self._spots3d.find_candidates_params = {
+                'threshold' : float(self.txt_dog_thresh.text()),
+                'min_spot_xy_factor' : float(self.txt_min_spot_xy_factor.text()),
+                'min_spot_z_factor' : float(self.txt_min_spot_z_factor.text()),
+                }
+            self._spots3d.scan_chunk_size = self.scan_chunk_size_find_peaks # GPU timeout on OPM if > 64. Will change registry settings for TDM timeout.
+            self._spots3d.run_find_candidates()
+            n_candidates.append(len(self._spots3d._spot_candidates))
+        plt.figure(figsize=(15, 15))
+        plt.semilogy(thresholds, n_candidates)
+        plt.ylabel("number of candidates")
+        plt.xlabel("threshold")
 
 
     def _find_peaks(self):
