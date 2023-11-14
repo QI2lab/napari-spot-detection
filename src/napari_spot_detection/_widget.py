@@ -1401,7 +1401,7 @@ class SpotDetection(QWidget):
             )
             
 
-    def _save_spots(self):
+    def _save_spots(self, path_save=None):
 
             # save the results
             if not hasattr(self, '_spot_select'):
@@ -1434,7 +1434,8 @@ class SpotDetection(QWidget):
                     'select': self._spot_select,
                 })
 
-            path_save = QFileDialog.getSaveFileName(self, 'Export spots data')[0]
+            if path_save is None:
+                path_save = QFileDialog.getSaveFileName(self, 'Export spots data')[0]
             if path_save != '':
                 if not path_save.endswith('.csv'):
                     path_save = path_save + '.csv'
@@ -1499,9 +1500,10 @@ class SpotDetection(QWidget):
             slider.setValue((mini, maxi)) 
 
 
-    def _load_parameters(self):
+    def _load_parameters(self, path_load=None):
 
-        path_load = QFileDialog.getOpenFileName(self,"Load spots data","","JSON Files (*.json);;All Files (*)")[0]
+        if path_load is None:
+            path_load = QFileDialog.getOpenFileName(self,"Load spots data","","JSON Files (*.json);;All Files (*)")[0]
         if path_load != '':
             # deactivate automatic parameters update during pipeline execution
             self.auto_params = False
@@ -1596,12 +1598,54 @@ class SpotDetection(QWidget):
     def _run_dir(self):
         """
         Perform spot localization on all image data in a directory.
+
+        The localization paramaters file is assumed to be in the same directory 
+        as the folder containing all images.
+        For now it's designed to execute localization on all tiff images stored in a directory.
         """
+
         path_dir = QFileDialog.getExistingDirectory(self, "Select Directory")
         if path_dir is not None:
-            print("Performing spot localization on all images.")            
-
+            print("Performing spot localization on all images.")
+            path_dir = Path(path_dir)
             
+            dir_localize = path_dir / 'localize'
+            dir_imgs = path_dir / 'tiffs'
+            path_imgs = dir_imgs.glob('*.tiff')
+
+            # localize in each image:
+            for path_img in path_imgs:
+                # remove previous data layers
+                for _ in range(len(self.viewer.layers)):
+                    self.viewer.layers.pop(0)
+
+                # set up the plugin data
+                self.steps_performed = {
+                    'load_dark_field': False,
+                    'load_psf': False,
+                    'load_model': False,
+                    'run_deconvolution': False,
+                    'apply_DoG': False,
+                    'find_peaks': False,
+                    'fit_spots': False,
+                    'filter_spots': False,
+                }
+
+                # load localization parameters
+                path_params = path_dir / 'localization_parameters.json'
+                self._load_parameters(path_load=path_params)
+
+                # load specific image
+                img = tifffile.imread(path_img)
+                # execute localization pipeline
+                self._filter_spots()
+
+                # save results
+                img_name = path_img.stem
+                path_save = dir_localize / img_name
+                self._save_spots(path_save)
+
+
 
 if __name__ == "__main__":
     viewer = napari.Viewer()
