@@ -37,6 +37,7 @@ import warnings
 import napari
 from pathlib import Path
 import sys
+from tqdm import tqdm
 
 from opm_merfish_analysis.SPOTS3D import SPOTS3D
 from opm_merfish_analysis._imageprocessing import deskew, replace_hot_pixels
@@ -296,7 +297,7 @@ class SpotDetection(QWidget):
         # Deconvolution parameters
         self.lab_deconv_iter = QLabel('iterations')
         self.txt_deconv_iter = QLineEdit()
-        self.txt_deconv_iter.setText('100')
+        self.txt_deconv_iter.setText('10')
         self.lab_deconv_tvtau = QLabel('TV tau')
         self.txt_deconv_tvtau = QLineEdit()
         self.txt_deconv_tvtau.setText('.001')
@@ -315,45 +316,6 @@ class SpotDetection(QWidget):
 
         return group
 
-
-    def _create_adapthist_groupBox(self):
-        group = QGroupBox(title="Adaptive histogram")
-        group.setCheckable(True)
-        group.setChecked(False)
-        group.setSizePolicy(QSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum))
-        group_layout = QVBoxLayout()
-        group.setLayout(group_layout)
-
-        # Adaptive histogram
-        self.lab_adapthist_x = QLabel('x')
-        self.txt_adapthist_x = QLineEdit()
-        self.txt_adapthist_x.setText('25')
-        self.lab_adapthist_y = QLabel('y')
-        self.txt_adapthist_y = QLineEdit()
-        self.txt_adapthist_y.setText('25')
-        self.lab_adapthist_z = QLabel('z')
-        self.txt_adapthist_z = QLineEdit()
-        self.txt_adapthist_z.setText('25')
-        self.but_run_adapthist = QPushButton()
-        self.but_run_adapthist.setText('Run adaptive histogram')
-        self.but_run_adapthist.clicked.connect(self._run_adaptive_histogram)
-
-        # layout for adaptive histogram
-        adapthistLayout = QHBoxLayout()
-        # adapthistLayout.addWidget(self.lab_adapthist)
-        # adapthistLayout.addWidget(self.chk_adapthist)
-        adapthistLayout.addWidget(self.lab_adapthist_x)
-        adapthistLayout.addWidget(self.txt_adapthist_x)
-        adapthistLayout.addWidget(self.lab_adapthist_y)
-        adapthistLayout.addWidget(self.txt_adapthist_y)
-        adapthistLayout.addWidget(self.lab_adapthist_z)
-        adapthistLayout.addWidget(self.txt_adapthist_z)
-        group_layout.addLayout(adapthistLayout)
-        group_layout.addWidget(self.but_run_adapthist)
-
-        return group
-
-
     def _create_localmax_groupBox(self):
         group = QGroupBox(title="Find local maxima")
         group.setCheckable(False)
@@ -365,26 +327,26 @@ class SpotDetection(QWidget):
         # Differential of Gaussian parameters 
         self.lab_sigma_ratio = QLabel('DoG sigma ratio big / small')
         self.txt_sigma_ratio = QLineEdit()
-        self.txt_sigma_ratio.setText('1.6')
+        self.txt_sigma_ratio.setText('2.0')
         self.but_auto_sigmas = QPushButton()
         self.but_auto_sigmas.setText('Auto sigmas')
         self.but_auto_sigmas.clicked.connect(self._make_sigmas_factors)
         # DoG blob detection widgets
         self.lab_dog_sigma_z_factor = QLabel('sigma DoG z factor')
         self.txt_dog_sigma_small_z_factor = QLineEdit()
-        self.txt_dog_sigma_small_z_factor.setText('1.0')
+        self.txt_dog_sigma_small_z_factor.setText('0.707')
         self.txt_dog_sigma_large_z_factor = QLineEdit()
-        self.txt_dog_sigma_large_z_factor.setText('3')
+        self.txt_dog_sigma_large_z_factor.setText('1.414')
         self.lab_dog_sigma_y_factor = QLabel('sigma DoG y factor')
         self.txt_dog_sigma_small_y_factor = QLineEdit()
-        self.txt_dog_sigma_small_y_factor.setText('0.1')
+        self.txt_dog_sigma_small_y_factor.setText('0.707')
         self.txt_dog_sigma_large_y_factor = QLineEdit()
-        self.txt_dog_sigma_large_y_factor.setText('3')
+        self.txt_dog_sigma_large_y_factor.setText('1.414')
         self.lab_dog_sigma_x_factor = QLabel('sigma DoG x factor')
         self.txt_dog_sigma_small_x_factor = QLineEdit()
-        self.txt_dog_sigma_small_x_factor.setText('0.1')
+        self.txt_dog_sigma_small_x_factor.setText('0.707')
         self.txt_dog_sigma_large_x_factor = QLineEdit()
-        self.txt_dog_sigma_large_x_factor.setText('3')
+        self.txt_dog_sigma_large_x_factor.setText('1.414')
         self.lab_dog_choice = QLabel('run DoG on:')
         self.cbx_dog_choice = QComboBox()
         self.cbx_dog_choice.addItems(['deconvolved', 'raw'])
@@ -917,12 +879,12 @@ class SpotDetection(QWidget):
         """
 
         sigma_ratio = float(self.txt_sigma_ratio.text())
-        DoG_filter_params = {'sigma_small_x_factor' : 1 / sigma_ratio**(1/2),
-                             'sigma_small_y_factor' : 1 / sigma_ratio**(1/2),
-                             'sigma_small_z_factor' : 1 / sigma_ratio**(1/2),
-                             'sigma_large_x_factor' : 1 * sigma_ratio**(1/2),
-                             'sigma_large_y_factor' : 1 * sigma_ratio**(1/2),
-                             'sigma_large_z_factor' : 1 * sigma_ratio**(1/2)} 
+        DoG_filter_params = {'sigma_small_x_factor' : np.round(1 / sigma_ratio**(1/2),3),
+                             'sigma_small_y_factor' : np.round(1 / sigma_ratio**(1/2),3),
+                             'sigma_small_z_factor' : np.round(1 / sigma_ratio**(1/2),3),
+                             'sigma_large_x_factor' : np.round(1 * sigma_ratio**(1/2),3),
+                             'sigma_large_y_factor' : np.round(1 * sigma_ratio**(1/2),3),
+                             'sigma_large_z_factor' : np.round(1 * sigma_ratio**(1/2),3)} 
         self._spots3d.DoG_filter_params = DoG_filter_params
         
         self.txt_dog_sigma_small_z_factor.setText(str(DoG_filter_params['sigma_small_z_factor']))
@@ -986,33 +948,48 @@ class SpotDetection(QWidget):
             print("starting find candidates")
         if self.cbx_find_peaks_source.currentIndex() == 0:
             self._spots3d.find_candidates_source_data = 'dog'
-            mini = self._spots3d._dog_data.min()
-            maxi = self._spots3d._dog_data.max()
+            mini = np.percentile(self._spots3d._dog_data[self._spots3d._dog_data>0].ravel(),25)
+            maxi = np.percentile(self._spots3d._dog_data[self._spots3d._dog_data>0].ravel(),99.999999)
         elif self.cbx_find_peaks_source.currentIndex() == 1:
             self._spots3d.find_candidates_source_data = 'decon'
-            mini = self._spots3d._decon_data.min()
-            maxi = self._spots3d._decon_data.max()
+            mini = np.percentile(self._spots3d._decon_data[self._spots3d._decon_data>0].ravel(),25)
+            maxi = np.percentile(self._spots3d._decon_data[self._spots3d._decon_data>0].ravel(),99.999999)
         elif self.cbx_find_peaks_source.currentIndex() == 2:
             self._spots3d.find_candidates_source_data = 'raw'
-            mini = self._spots3d._data.min()
-            maxi = self._spots3d._data.max()
+            mini = np.percentile(self._spots3d._data[self._spots3d._data>0].ravel(),25)
+            maxi = np.percentile(self._spots3d._data[self._spots3d._data>0].ravel(),99.999999)
+            
+        if mini < 200:
+            mini = 200.
+        else:
+            mini.compute()
+        maxi = maxi.compute()
         
-        thresholds = np.arange(mini, maxi, 100)
+        step = np.abs(maxi-mini)/200.
+        thresholds = np.round(np.arange(mini, maxi, step),0)
         n_candidates = []
         # TODO: decrease verbosity (hide tqdm bars) during find_candidates
-        for thresh in thresholds:
+        for thresh in tqdm(thresholds,desc='Threshold'):
             self._spots3d.find_candidates_params = {
-                'threshold' : float(self.txt_dog_thresh.text()),
+                'threshold' : float(thresh),
                 'min_spot_xy_factor' : float(self.txt_min_spot_xy_factor.text()),
                 'min_spot_z_factor' : float(self.txt_min_spot_z_factor.text()),
                 }
             self._spots3d.scan_chunk_size = self.scan_chunk_size_find_peaks # GPU timeout on OPM if > 64. Will change registry settings for TDM timeout.
             self._spots3d.run_find_candidates()
             n_candidates.append(len(self._spots3d._spot_candidates))
+        n_candidates = np.array(n_candidates)
         plt.figure(figsize=(15, 15))
         plt.semilogy(thresholds, n_candidates)
         plt.ylabel("number of candidates")
         plt.xlabel("threshold")
+        plt.show(block=False)
+        
+        self._spots3d.find_candidates_params = {
+                'threshold' : float(self.txt_dog_thresh.text()),
+                'min_spot_xy_factor' : float(self.txt_min_spot_xy_factor.text()),
+                'min_spot_z_factor' : float(self.txt_min_spot_z_factor.text()),
+                }
 
 
     def _find_peaks(self):
