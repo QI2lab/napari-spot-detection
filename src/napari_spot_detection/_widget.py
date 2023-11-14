@@ -21,6 +21,7 @@ from qtpy.QtWidgets import (
     QCheckBox, 
     QComboBox,
     QFileDialog, 
+    QTabWidget,
     QScrollArea, 
     QSizePolicy,
 )
@@ -114,13 +115,14 @@ class SpotDetection(QWidget):
         self.layout().setSpacing(0)
         self.layout().setContentsMargins(10, 10, 10, 10)
 
-        # general scroll area
-        self._scroll = QScrollArea()
-        self._scroll.setWidgetResizable(True)
-        self._scroll.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.spot_wdg = self._create_gui()
-        self._scroll.setWidget(self.spot_wdg)
-        self.layout().addWidget(self._scroll)
+        self.tabs = QTabWidget()
+        self.tabs.setTabPosition(QTabWidget.North)
+
+        self.params_wdg = self._create_localization_params_wdg()
+        self.pipeline_wdg = self._create_execute_pipeline_wdg()
+        self.tabs.addTab(self.params_wdg, "optimize parameters")
+        self.tabs.addTab(self.pipeline_wdg, "execute pipeline")
+        self.layout().addWidget(self.tabs)
         
         self.steps_performed = {
             'load_dark_field': False,
@@ -151,7 +153,7 @@ class SpotDetection(QWidget):
         self._verbose = 2
 
         
-    def _create_gui(self):
+    def _create_localization_params_wdg(self):
         wdg = QWidget()
         wdg_layout = QVBoxLayout()
         wdg_layout.setSpacing(20)
@@ -178,6 +180,26 @@ class SpotDetection(QWidget):
         
         self.save_groupBox = self._create_save_groupBox()
         wdg_layout.addWidget(self.save_groupBox)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        scroll.setWidget(wdg)        
+
+        return scroll
+    
+        
+    def _create_execute_pipeline_wdg(self):
+        wdg = QWidget()
+        wdg_layout = QVBoxLayout()
+        wdg_layout.setSpacing(20)
+        wdg_layout.setContentsMargins(10, 10, 10, 10)
+        wdg.setLayout(wdg_layout)
+
+        self.but_run_dir = QPushButton()
+        self.but_run_dir.setText('Run on directory')
+        self.but_run_dir.clicked.connect(self._run_dir)
+        wdg_layout.addWidget(self.but_run_dir)
 
         return wdg
     
@@ -665,9 +687,6 @@ class SpotDetection(QWidget):
         self.but_load_parameters = QPushButton()
         self.but_load_parameters.setText('Load detection parameters')
         self.but_load_parameters.clicked.connect(self._load_parameters)
-        self.but_run_dir = QPushButton()
-        self.but_run_dir.setText('Run on directory')
-        self.but_run_dir.clicked.connect(self._run_dir)
 
         # layout for saving and loading spots data and detection parameters
         saveloadLayout = QGridLayout()
@@ -676,7 +695,6 @@ class SpotDetection(QWidget):
         saveloadLayout.addWidget(self.but_save_parameters, 1, 0)
         saveloadLayout.addWidget(self.but_load_parameters, 1, 1)
         group_layout.addLayout(saveloadLayout)
-        group_layout.addWidget(self.but_run_dir)
 
         return group
 
