@@ -44,8 +44,12 @@ from opm_merfish_analysis.SPOTS3D import SPOTS3D
 from opm_merfish_analysis._imageprocessing import deskew, replace_hot_pixels
 from opm_merfish_analysis._skeweddatatools import point_in_trapezoid
 
-DEBUG = False
+try:
+    from cucim.skimage.exposure import histogram
+except:
+    from skimage.exposure import histogram
 
+DEBUG = False
 
 class FullSlider(QWidget):
     """
@@ -141,7 +145,7 @@ class SpotDetection(QWidget):
         # For a 24GB GPU
         # TODO: add option in GUI with textboxes
         self.scan_chunk_size_deconv = 256
-        self.scan_chunk_size_dog = 128
+        self.scan_chunk_size_dog = 16
         self.scan_chunk_size_find_peaks = 128
         
         self.show_deskewed_deconv = True
@@ -165,9 +169,7 @@ class SpotDetection(QWidget):
         
         self.deconv_groupBox = self._create_deconv_groupBox()
         wdg_layout.addWidget(self.deconv_groupBox)
-        
-        # self.adapthist_groupBox = self._create_adapthist_groupBox()
-        # wdg_layout.addWidget(self.adapthist_groupBox)
+
         
         self.localmax_groupBox = self._create_localmax_groupBox()
         wdg_layout.addWidget(self.localmax_groupBox)
@@ -778,6 +780,7 @@ class SpotDetection(QWidget):
             if len(self.viewer.layers.selection) == 0:
                 img = self.viewer.layers[0].data
                 scale = self.viewer.layers[0].scale
+                
             else:
                 # selection is a set, we need some wrangle to get the first element
                 first_selected_layer = next(iter(self.viewer.layers.selection))
@@ -787,8 +790,15 @@ class SpotDetection(QWidget):
                     if self._verbose > 1:
                         print(f"Changing image scale from {scale} to {self.scale}")
                     first_selected_layer.scale = self.scale
-
-        return img
+        
+        # if more 3 dimensons, use sliders in viewer to extract active view
+        if len(img.shape) > 3:
+            current_idxs = self.viewer.dims.current_step
+            indices_to_use = len(current_idxs) - 3
+            slicing_indices = current_idxs[:indices_to_use] + (slice(None),) * 3
+            return img[slicing_indices]
+        else:
+            return img
 
     def _add_image(self, data, name=None, **kwargs):
         """
@@ -878,6 +888,8 @@ class SpotDetection(QWidget):
         }
         self._spots3d.decon_params = new_decon_params
         self._spots3d.scan_chunk_size = self.scan_chunk_size_deconv # GPU out-of-memory on OPM PC if > 128
+        if DEBUG:
+            print('Decon chunk size: ' + str(self._spots3d.scan_chunk_size))
         self._spots3d.run_deconvolution()
         if self._verbose > 0:
             print("finished deconvolution")
@@ -886,10 +898,6 @@ class SpotDetection(QWidget):
         if DEBUG:
             print("In _run_deconvolution:")
             print("_spots3d.decon_params:", self._spots3d.decon_params)
-        
-    
-    def _run_adaptive_histogram(self):
-        print('Not implemented yet')
 
     def _make_sigmas_factors(self):
         """
@@ -938,6 +946,8 @@ class SpotDetection(QWidget):
         self._spots3d.DoG_filter_params = new_dog_params
         # add choice of chunk size in GUI?
         self._spots3d.scan_chunk_size = self.scan_chunk_size_dog # GPU out-of-memory on OPM PC if > 64
+        if DEBUG:
+            print('DoG chunk size: ' + str(self._spots3d.scan_chunk_size))
         self._spots3d.run_DoG_filter()
         if self._verbose > 0:
             print("finished DoG filter")
@@ -966,21 +976,18 @@ class SpotDetection(QWidget):
             print("starting find candidates")
         if self.cbx_find_peaks_source.currentIndex() == 0:
             self._spots3d.find_candidates_source_data = 'dog'
-            mini = np.percentile(self._spots3d._dog_data[self._spots3d._dog_data>0].ravel(),25)
-            maxi = np.percentile(self._spots3d._dog_data[self._spots3d._dog_data>0].ravel(),99.999999)
+            mini = np.percentile(self._spots3d._dog_data[self._spots3d._dog_data>100].ravel(),25)
+            maxi = np.percentile(self._spots3d._dog_data[self._spots3d._dog_data>100].ravel(),99.999999)
         elif self.cbx_find_peaks_source.currentIndex() == 1:
             self._spots3d.find_candidates_source_data = 'decon'
-            mini = np.percentile(self._spots3d._decon_data[self._spots3d._decon_data>0].ravel(),25)
-            maxi = np.percentile(self._spots3d._decon_data[self._spots3d._decon_data>0].ravel(),99.999999)
+            mini = np.percentile(self._spots3d._decon_data[self._spots3d._decon_data>100].ravel(),25)
+            maxi = np.percentile(self._spots3d._decon_data[self._spots3d._decon_data>100].ravel(),99.999999)
         elif self.cbx_find_peaks_source.currentIndex() == 2:
             self._spots3d.find_candidates_source_data = 'raw'
-            mini = np.percentile(self._spots3d._data[self._spots3d._data>0].ravel(),25)
-            maxi = np.percentile(self._spots3d._data[self._spots3d._data>0].ravel(),99.999999)
+            mini = np.percentile(self._spots3d._data[self._spots3d._data>100].ravel(),25)
+            maxi = np.percentile(self._spots3d._data[self._spots3d._data>100].ravel(),99.999999)
             
-        if mini < 200:
-            mini = 200.
-        else:
-            mini.compute()
+        mini = mini.compute()
         maxi = maxi.compute()
         
         step = np.abs(maxi-mini)/200.
@@ -997,10 +1004,20 @@ class SpotDetection(QWidget):
             self._spots3d.run_find_candidates()
             n_candidates.append(len(self._spots3d._spot_candidates))
         n_candidates = np.array(n_candidates)
+        
+        
+        # calculate pixel histogram
+        pixel_histogram, bin_center = histogram(self._spots3d._data[self._spots3d._decon_data>0],nbins=4095,source_range='image')
+        
         plt.figure(figsize=(15, 15))
         plt.semilogy(thresholds, n_candidates)
         plt.ylabel("number of candidates")
         plt.xlabel("threshold")
+        
+        plt.figure(figsize=(15,15))
+        plt.semilogy(bin_center,pixel_histogram)
+        plt.ylabel('Count')
+        plt.xlabel('Pixel intensity')
         plt.show(block=False)
         
         self._spots3d.find_candidates_params = {
@@ -1075,7 +1092,7 @@ class SpotDetection(QWidget):
 
         self._add_points(
             self._spots3d._spot_candidates[:, :3], 
-            name='local maxis',
+            name='local maximums',
             blending='additive', 
             size=0.25, 
             face_color='r',
@@ -1434,12 +1451,12 @@ class SpotDetection(QWidget):
                     'select': self._spot_select,
                 })
 
-            if path_save is None:
+            if path_save is None: 
                 path_save = QFileDialog.getSaveFileName(self, 'Export spots data')[0]
-            if path_save != '':
-                if not path_save.endswith('.csv'):
+            else:
+                if not str(path_save).endswith('.csv'):
                     path_save = path_save + '.csv'
-                df_spots.to_csv(path_save, index=False)
+            df_spots.to_csv(path_save, index=False)
 
 
     def _load_spots(self):
@@ -1472,7 +1489,7 @@ class SpotDetection(QWidget):
                 self._add_points(self._centers[self._spot_select], name='filtered spots', blending='additive', size=0.25, face_color='b')
 
 
-    def _save_parameters(self):
+    def _save_parameters(self, path_save = None):
 
         detection_parameters = {
             'metadata': self._spots3d.metadata,
@@ -1487,12 +1504,13 @@ class SpotDetection(QWidget):
             'psf_origin': self._psf_origin,
         }
 
-        path_save = QFileDialog.getSaveFileName(self, 'Export detection parameters')[0]
-        if path_save != '':
+        if path_save is None:
+            path_save = QFileDialog.getSaveFileName(self, 'Export detection parameters')[0]
+        else:
             if not path_save.endswith('.json'):
                 path_save = path_save + '.json'
-            with open(path_save, "w") as write_file:
-                json.dump(detection_parameters, write_file, indent=4)
+        with open(path_save, "w") as write_file:
+            json.dump(detection_parameters, write_file, indent=4)
 
 
     def _update_slider(self, slider, mini, maxi):
@@ -1538,9 +1556,6 @@ class SpotDetection(QWidget):
             
             self.txt_deconv_iter.setText(str(detection_parameters['decon_params']['iterations']))
             self.txt_deconv_tvtau.setText(str(detection_parameters['decon_params']['tv_tau']))
-            # self.txt_adapthist_x.setText(str(detection_parameters['']))  # not implemented yet
-            # self.txt_adapthist_y.setText(str(detection_parameters['']))
-            # self.txt_adapthist_z.setText(str(detection_parameters['']))
                     
             self.txt_dog_sigma_small_z_factor.setText(str(detection_parameters['DoG_filter_params']['sigma_small_z_factor']))
             self.txt_dog_sigma_large_z_factor.setText(str(detection_parameters['DoG_filter_params']['sigma_large_z_factor']))
@@ -1609,41 +1624,82 @@ class SpotDetection(QWidget):
             print("Performing spot localization on all images.")
             path_dir = Path(path_dir)
             
-            dir_localize = path_dir / 'localize'
-            dir_imgs = path_dir / 'tiffs'
-            path_imgs = dir_imgs.glob('*.tiff')
+            if ".zarr" in str(path_dir):
+                import zarr
+                
+                dir_localize = path_dir.parent / 'localize'
+                dir_localize.mkdir(exist_ok=True)
+                data_zarr = zarr.open(path_dir)
+                                
+                for t_idx in range(data_zarr.shape[0]):
+                    for _ in range(len(self.viewer.layers)):
+                        self.viewer.layers.pop(0)
+                        
+                    img = np.squeeze(np.array(data_zarr[t_idx,:]))
+                    self._add_image(img)
+                    
+                    # set up the plugin data
+                    self.steps_performed = {
+                        'load_dark_field': False,
+                        'load_psf': False,
+                        'load_model': False,
+                        'run_deconvolution': False,
+                        'apply_DoG': False,
+                        'find_peaks': False,
+                        'fit_spots': False,
+                        'filter_spots': False,
+                    }
+                    
+                    # load localization parameters
+                    path_params = path_dir.parent / 'localization_parameters.json'
+                    self._load_parameters(path_load=path_params)
 
-            # localize in each image:
-            for path_img in path_imgs:
-                # remove previous data layers
-                for _ in range(len(self.viewer.layers)):
-                    self.viewer.layers.pop(0)
+                    # execute localization pipeline
+                    self._filter_spots()
 
-                # set up the plugin data
-                self.steps_performed = {
-                    'load_dark_field': False,
-                    'load_psf': False,
-                    'load_model': False,
-                    'run_deconvolution': False,
-                    'apply_DoG': False,
-                    'find_peaks': False,
-                    'fit_spots': False,
-                    'filter_spots': False,
-                }
+                    # save results
+                    spots_name = Path(path_dir.stem + '_t'+str(t_idx).zfill(5)+'.csv')
+                    path_save = dir_localize / spots_name
+                    self._save_spots(path_save)
+                                    
+            else:
+                
+                dir_localize = path_dir / 'localize'
+                dir_imgs = path_dir / 'tiffs'
+                path_imgs = dir_imgs.glob('*.tiff')
 
-                # load localization parameters
-                path_params = path_dir / 'localization_parameters.json'
-                self._load_parameters(path_load=path_params)
+                # localize in each image:
+                for path_img in path_imgs:
+                    # remove previous data layers
+                    for _ in range(len(self.viewer.layers)):
+                        self.viewer.layers.pop(0)
 
-                # load specific image
-                img = tifffile.imread(path_img)
-                # execute localization pipeline
-                self._filter_spots()
+                    # set up the plugin data
+                    self.steps_performed = {
+                        'load_dark_field': False,
+                        'load_psf': False,
+                        'load_model': False,
+                        'run_deconvolution': False,
+                        'apply_DoG': False,
+                        'find_peaks': False,
+                        'fit_spots': False,
+                        'filter_spots': False,
+                    }
 
-                # save results
-                img_name = path_img.stem
-                path_save = dir_localize / img_name
-                self._save_spots(path_save)
+                    # load localization parameters
+                    path_params = path_dir / 'localization_parameters.json'
+                    self._load_parameters(path_load=path_params)
+
+                    # load specific image
+                    img = tifffile.imread(path_img)
+                    self._add_image(img)
+                    # execute localization pipeline
+                    self._filter_spots()
+
+                    # save results
+                    img_name = path_img.stem
+                    path_save = dir_localize / img_name
+                    self._save_spots(path_save)
 
 
 
