@@ -40,9 +40,9 @@ from pathlib import Path
 import sys
 from tqdm import tqdm
 
-from opm_merfish_analysis.SPOTS3D import SPOTS3D
-from opm_merfish_analysis._imageprocessing import deskew, replace_hot_pixels
-from opm_merfish_analysis._skeweddatatools import point_in_trapezoid
+from spots3d.SPOTS3D import SPOTS3D
+from spots3d._imageprocessing import deskew, replace_hot_pixels
+from spots3d._skeweddatatools import point_in_trapezoid
 
 try:
     from cucim.skimage.exposure import histogram
