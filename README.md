@@ -23,7 +23,7 @@ https://napari.org/plugins/stable/index.html
 
 ## Installation
 
-This package relies on [opm-merfish-analysis](https://github.com/QI2lab/opm-merfish-analysis), that details how to install other dependencies such as [localize-psf](https://github.com/QI2lab/localize-psf) and a fork of [GPUfit](https://github.com/QI2lab/Gpufit), as well as CUDA dependencies. Then you can run:
+This package relies on [spots3d](https://github.com/QI2lab/spots3d), that details how to install other dependencies such as [localize-psf](https://github.com/QI2lab/localize-psf) and a fork of [GPUfit](https://github.com/QI2lab/Gpufit), as well as CUDA dependencies. Once spots3d is installed, you can run:
 
     pip install git+https://github.com/QI2lab/napari-spot-detection.git
 
