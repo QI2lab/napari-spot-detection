@@ -394,7 +394,7 @@ class SpotDetection(QWidget):
         self.cbx_find_peaks_source.addItems(['DoG', 'deconvolved', 'raw'])
         self.lab_dog_thresh = QLabel('DoG threshold')
         self.txt_dog_thresh = QLineEdit()
-        self.txt_dog_thresh.setText('50')
+        self.txt_dog_thresh.setText('500')
         self.but_plot_thresh_curve = QPushButton()
         self.but_plot_thresh_curve.setText('Plot threshold curve')
         self.but_plot_thresh_curve.clicked.connect(self._plot_thresh_curve)
