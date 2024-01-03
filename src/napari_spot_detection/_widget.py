@@ -1451,13 +1451,11 @@ class SpotDetection(QWidget):
                     'select': self._spot_select,
                 })
 
-            if path_save is None: 
+            if path_save is None or not(path_save): 
                 path_save = QFileDialog.getSaveFileName(self, 'Export spots data')[0]
-            else:
-                if not str(path_save).endswith('.csv'):
-                    path_save = path_save + '.csv'
+            if not str(path_save).endswith('.csv'):
+                path_save = path_save + '.csv'
             df_spots.to_csv(path_save, index=False)
-
 
     def _load_spots(self):
 
@@ -1504,11 +1502,10 @@ class SpotDetection(QWidget):
             'psf_origin': self._psf_origin,
         }
 
-        if path_save is None:
+        if path_save is None or not(path_save):
             path_save = QFileDialog.getSaveFileName(self, 'Export detection parameters')[0]
-        else:
-            if not path_save.endswith('.json'):
-                path_save = path_save + '.json'
+        if not path_save.endswith('.json'):
+            path_save = path_save + '.json'
         with open(path_save, "w") as write_file:
             json.dump(detection_parameters, write_file, indent=4)
 
