@@ -84,3 +84,4 @@ venv/
 **/_version.py
 
 path_dir/.zgroup
+*.csv

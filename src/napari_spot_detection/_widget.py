@@ -44,10 +44,20 @@ from spots3d.SPOTS3D import SPOTS3D
 from spots3d._imageprocessing import deskew, replace_hot_pixels
 from spots3d._skeweddatatools import point_in_trapezoid
 
+CUPY_AVAILABLE = False
+try:
+    import cupy as cp
+    CUPY_AVAILABLE = True
+except:
+    CUPY_AVAILABLE = False
+    
+CUCIM_AVAILABLE = False
 try:
     from cucim.skimage.exposure import histogram
+    CUCIM_AVAILABLE = True
 except:
     from skimage.exposure import histogram
+    CUCIM_AVAILABLE = False
 
 DEBUG = False
 
@@ -976,21 +986,21 @@ class SpotDetection(QWidget):
             print("starting find candidates")
         if self.cbx_find_peaks_source.currentIndex() == 0:
             self._spots3d.find_candidates_source_data = 'dog'
-            mini = np.percentile(self._spots3d._dog_data[self._spots3d._dog_data>100].ravel(),25)
+            mini = np.percentile(self._spots3d._dog_data[self._spots3d._dog_data>100].ravel(),55)
             maxi = np.percentile(self._spots3d._dog_data[self._spots3d._dog_data>100].ravel(),99.999999)
         elif self.cbx_find_peaks_source.currentIndex() == 1:
             self._spots3d.find_candidates_source_data = 'decon'
-            mini = np.percentile(self._spots3d._decon_data[self._spots3d._decon_data>100].ravel(),25)
+            mini = np.percentile(self._spots3d._decon_data[self._spots3d._decon_data>100].ravel(),55)
             maxi = np.percentile(self._spots3d._decon_data[self._spots3d._decon_data>100].ravel(),99.999999)
         elif self.cbx_find_peaks_source.currentIndex() == 2:
             self._spots3d.find_candidates_source_data = 'raw'
-            mini = np.percentile(self._spots3d._data[self._spots3d._data>100].ravel(),25)
+            mini = np.percentile(self._spots3d._data[self._spots3d._data>100].ravel(),55)
             maxi = np.percentile(self._spots3d._data[self._spots3d._data>100].ravel(),99.999999)
             
         mini = mini.compute()
         maxi = maxi.compute()
         
-        step = np.abs(maxi-mini)/200.
+        step = np.abs(maxi-mini)/1000.
         thresholds = np.round(np.arange(mini, maxi, step),0)
         n_candidates = []
         # TODO: decrease verbosity (hide tqdm bars) during find_candidates
@@ -1000,14 +1010,21 @@ class SpotDetection(QWidget):
                 'min_spot_xy_factor' : float(self.txt_min_spot_xy_factor.text()),
                 'min_spot_z_factor' : float(self.txt_min_spot_z_factor.text()),
                 }
-            self._spots3d.scan_chunk_size = self.scan_chunk_size_find_peaks # GPU timeout on OPM if > 64. Will change registry settings for TDM timeout.
+            self._spots3d.scan_chunk_size = self.scan_chunk_size_find_peaks
             self._spots3d.run_find_candidates()
             n_candidates.append(len(self._spots3d._spot_candidates))
         n_candidates = np.array(n_candidates)
         
         
         # calculate pixel histogram
-        pixel_histogram, bin_center = histogram(self._spots3d._data[self._spots3d._decon_data>0],nbins=4095,source_range='image')
+        if CUPY_AVAILABLE and CUCIM_AVAILABLE:
+            pixel_histogram_cp, bin_center_cp = histogram(cp.asarray(self._spots3d._data[self._spots3d._data>100.].compute()),nbins=4095,source_range='image')
+            pixel_histogram = cp.asnumpy(pixel_histogram_cp)
+            bin_center = cp.asnumpy(bin_center_cp)
+            del pixel_histogram_cp, bin_center_cp 
+        else:
+            pixel_histogram_cp, bin_center_cp = histogram(self._spots3d._data[self._spots3d._data>100.].compute(),nbins=4095,source_range='image')
+
         
         plt.figure(figsize=(15, 15))
         plt.semilogy(thresholds, n_candidates)
@@ -1516,9 +1533,12 @@ class SpotDetection(QWidget):
 
 
     def _load_parameters(self, path_load=None):
+        
+        if path_load is None or not(path_load): 
+                path_load = QFileDialog.getOpenFileName(self,"Load spots data","","JSON Files (*.json);;All Files (*)")[0]
+        if not str(path_load).endswith('.json'):
+            path_load = path_load + '.json'
 
-        if path_load is None:
-            path_load = QFileDialog.getOpenFileName(self,"Load spots data","","JSON Files (*.json);;All Files (*)")[0]
         if path_load != '':
             # deactivate automatic parameters update during pipeline execution
             self.auto_params = False
