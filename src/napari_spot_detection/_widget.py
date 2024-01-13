@@ -876,7 +876,7 @@ class SpotDetection(QWidget):
                              'theta' : theta}
 
         self._spots3d = SPOTS3D(
-            data = spots3d_data,
+            data = np.flipud(spots3d_data),
             psf = self.psf, 
             metadata= metadata,
             microscope_params=microscope_params,
@@ -1116,6 +1116,10 @@ class SpotDetection(QWidget):
             )
         self.steps_performed['find_peaks'] = True
 
+        if self._spots3d._spot_candidates.shape[0] == 0:
+            self._skip_fitting = True
+        else:
+            self._skip_fitting = False
 
     def _merge_peaks(self):
         """
@@ -1148,6 +1152,8 @@ class SpotDetection(QWidget):
         """
         if not self.steps_performed['find_peaks']:
             self._find_peaks()
+            if self._skip_fitting:
+                return False
 
         self._spots3d.fit_candidate_spots_params = {
             'n_spots_to_fit' : int(self.txt_n_spots_to_fit.text()),
@@ -1325,6 +1331,8 @@ class SpotDetection(QWidget):
         
         if not self.steps_performed['fit_spots']:
             self._fit_spots()
+            if self._skip_fitting:
+                return False
 
         # list of boolean filters for all spots thresholds
         selectors = []
@@ -1675,9 +1683,10 @@ class SpotDetection(QWidget):
                     self._filter_spots()
 
                     # save results
-                    spots_name = Path(path_dir.stem + '_t'+str(t_idx).zfill(5)+'.csv')
-                    path_save = dir_localize / spots_name
-                    self._save_spots(path_save)
+                    if not(self._skip_fitting):
+                        spots_name = Path(path_dir.stem + '_t'+str(t_idx).zfill(5)+'.csv')
+                        path_save = dir_localize / spots_name
+                        self._save_spots(path_save)
                                     
             else:
                 
