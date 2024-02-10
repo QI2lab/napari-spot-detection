@@ -125,6 +125,8 @@ class SpotDetection(QWidget):
         self._fit_strs = None
         self.n_spots_to_fit = 5000
         
+        self.path_save = None
+        
         self.setLayout(QVBoxLayout())
         self.layout().setSpacing(0)
         self.layout().setContentsMargins(10, 10, 10, 10)
@@ -154,8 +156,8 @@ class SpotDetection(QWidget):
         
         # For a 24GB GPU
         # TODO: add option in GUI with textboxes
-        self.scan_chunk_size_deconv = 256
-        self.scan_chunk_size_dog = 16
+        self.scan_chunk_size_deconv = 128
+        self.scan_chunk_size_dog = 8
         self.scan_chunk_size_find_peaks = 128
         
         self.show_deskewed_deconv = True
@@ -966,7 +968,7 @@ class SpotDetection(QWidget):
             name='DoG', 
             scale=self.scale,
             # Remark: use _dog_data instead to get the Dask format?
-            contrast_limits=[0, self._spots3d.dog_data.max()],
+            contrast_limits=[0, self._spots3d._dog_data.max().compute()],
             )
         self.steps_performed['apply_DoG'] = True
         if DEBUG:
@@ -1519,7 +1521,9 @@ class SpotDetection(QWidget):
             'psf_origin': self._psf_origin,
         }
 
-        if path_save is None or not(path_save):
+        if self.path_save is not None:
+            path_save = str(self.path_save)
+        elif path_save is None or not(path_save):
             path_save = QFileDialog.getSaveFileName(self, 'Export detection parameters')[0]
         if not path_save.endswith('.json'):
             path_save = path_save + '.json'

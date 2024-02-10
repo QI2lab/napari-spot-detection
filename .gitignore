@@ -85,3 +85,4 @@ venv/
 
 path_dir/.zgroup
 *.csv
+test_import.py
