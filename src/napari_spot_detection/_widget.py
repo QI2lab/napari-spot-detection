@@ -157,7 +157,7 @@ class SpotDetection(QWidget):
         # For a 24GB GPU
         # TODO: add option in GUI with textboxes
         self.scan_chunk_size_deconv = 128
-        self.scan_chunk_size_dog = 8
+        self.scan_chunk_size_dog = 128
         self.scan_chunk_size_find_peaks = 128
         
         self.show_deskewed_deconv = True
@@ -248,6 +248,9 @@ class SpotDetection(QWidget):
         self.lab_angle = QLabel('angle (°)')
         self.txt_angle = QLineEdit()
         self.txt_angle.setText('30')
+        self.lab_direction = QLabel('flip scan direction')
+        self.chk_direction = QCheckBox()
+        self.chk_direction.setChecked(False)
         self.lab_spot_size_xy_um = QLabel('Expected spot size xy (µm)')
         self.txt_spot_size_xy_um = QLineEdit()
         self.txt_spot_size_xy_um.setText('')
@@ -294,6 +297,8 @@ class SpotDetection(QWidget):
         spotsizeLayout_skewed.addWidget(self.chk_skewed)
         spotsizeLayout_skewed.addWidget(self.lab_angle)
         spotsizeLayout_skewed.addWidget(self.txt_angle)
+        spotsizeLayout_skewed.addWidget(self.lab_direction)
+        spotsizeLayout_skewed.addWidget(self.chk_direction)
         spotsizeLayout_zxy_um = QHBoxLayout()
         spotsizeLayout_zxy_um.addWidget(self.lab_spot_size_xy_um)
         spotsizeLayout_zxy_um.addWidget(self.txt_spot_size_xy_um)
@@ -783,12 +788,33 @@ class SpotDetection(QWidget):
             if self._verbose > 0:
                 print("PSF loaded:", filename)
 
-
     def _get_selected_image(self):
+        
         if len(self.viewer.layers) == 0:
             print("Open an image first")
             img = None
         else:
+            if self.chk_direction.isChecked():
+                import gc
+                if len(self.viewer.layers.selection) == 0:
+                    img = np.flip(self.viewer.layers[0].data.copy(),axis=0)
+                    for _ in range(len(self.viewer.layers)):
+                        self.viewer.layers.pop(0)
+                        self.viewer.layers.clear()
+                        gc.collect()
+                    self._add_image(img,name='img')
+                else:
+                    first_selected_layer = next(iter(self.viewer.layers.selection)) 
+                    img = np.flip(first_selected_layer.data.copy(),axis=0)
+                    for _ in range(len(self.viewer.layers)):
+                        self.viewer.layers.pop(0)
+                        self.viewer.layers.clear()
+                        gc.collect()
+                    self._add_image(img,name='img')
+                    
+                del img
+                gc.collect()
+            
             if len(self.viewer.layers.selection) == 0:
                 img = self.viewer.layers[0].data
                 scale = self.viewer.layers[0].scale
@@ -847,6 +873,7 @@ class SpotDetection(QWidget):
         It includes the image and parameters for analysis.
         Some paramaters will be updated by following steps. 
         """
+        
         if self.chk_hotpix.isChecked() and not self.steps_performed['load_dark_field']:
             print("dark field image was not loaded, please load one")
             self._load_dark_field()
@@ -860,7 +887,7 @@ class SpotDetection(QWidget):
         img = self._get_selected_image()
         if img is None:
             return
-        
+                   
         if self.chk_hotpix.isChecked():
             spots3d_data = replace_hot_pixels(self.dark_field, img)
             self._add_image(
@@ -878,7 +905,7 @@ class SpotDetection(QWidget):
                              'theta' : theta}
 
         self._spots3d = SPOTS3D(
-            data = np.flipud(spots3d_data),
+            data = spots3d_data,
             psf = self.psf, 
             metadata= metadata,
             microscope_params=microscope_params,
@@ -1221,7 +1248,7 @@ class SpotDetection(QWidget):
         # update range of filters
         p_mini = float(self.txt_filter_percentile_min.text())
         p_maxi = float(self.txt_filter_percentile_max.text())
-        if self.auto_params:
+        if self.auto_params and len(self._amplitudes>1):
             self.sld_filter_amplitude_range.setRange(max(0, np.nanpercentile(self._amplitudes, p_mini)), np.nanpercentile(self._amplitudes, p_maxi))
             self.sld_filter_sigma_xy_factor.setRange(0, 10)
             self.sld_filter_sigma_z_factor.setRange(0, 10)
@@ -1341,18 +1368,18 @@ class SpotDetection(QWidget):
 
         spot_filter_params = {
             'amp_min' : self.sld_filter_amplitude_range.value()[0],
-            'sigma_min_z_factor' : self.sld_filter_sigma_z_factor.value()[0],
-            'sigma_min_xy_factor' : self.sld_filter_sigma_xy_factor.value()[0],                     
-            'sigma_max_z_factor' : self.sld_filter_sigma_z_factor.value()[1],
-            'sigma_max_xy_factor' : self.sld_filter_sigma_xy_factor.value()[1],
-            'fit_dist_max_err_z_factor': self.sld_fit_dist_max_err_z_factor.value(),
-            'fit_dist_max_err_xy_factor': self.sld_fit_dist_max_err_xy_factor.value(),
-            'min_spot_sep_z_factor' : self.sld_min_spot_sep_z_factor.value(),
-            'min_spot_sep_xy_factor' : self.sld_min_spot_sep_xy_factor.value(),
-            'dist_boundary_z_factor' : self.sld_dist_boundary_z_factor.value(),
-            'dist_boundary_xy_factor' : self.sld_dist_boundary_xy_factor.value(),
-            'min_sigma_ratio' : self.sld_filter_sigma_ratio_range.value()[0],
-            'max_sigma_ratio' : self.sld_filter_sigma_ratio_range.value()[1],
+            'sigma_min_z_factor' : self.sld_filter_sigma_z_factor.value()[0]-1e-8,
+            'sigma_min_xy_factor' : self.sld_filter_sigma_xy_factor.value()[0]-1e-8,                     
+            'sigma_max_z_factor' : self.sld_filter_sigma_z_factor.value()[1]+1e-8,
+            'sigma_max_xy_factor' : self.sld_filter_sigma_xy_factor.value()[1]+1e-8,
+            'fit_dist_max_err_z_factor': self.sld_fit_dist_max_err_z_factor.value()+1e-8,
+            'fit_dist_max_err_xy_factor': self.sld_fit_dist_max_err_xy_factor.value()+1e-8,
+            'min_spot_sep_z_factor' : self.sld_min_spot_sep_z_factor.value()+1e-8,
+            'min_spot_sep_xy_factor' : self.sld_min_spot_sep_xy_factor.value()+1e-8,
+            'dist_boundary_z_factor' : self.sld_dist_boundary_z_factor.value()+1e-8,
+            'dist_boundary_xy_factor' : self.sld_dist_boundary_xy_factor.value()+1e-8,
+            'min_sigma_ratio' : self.sld_filter_sigma_ratio_range.value()[0]+1e-8,
+            'max_sigma_ratio' : self.sld_filter_sigma_ratio_range.value()[1]+1e-8,
         }
         self._spots3d.spot_filter_params = spot_filter_params
         if self._verbose > 0:
